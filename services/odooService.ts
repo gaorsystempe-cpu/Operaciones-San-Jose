@@ -55,14 +55,31 @@ const parseValue = (node: Element): any => {
 };
 
 /**
- * Lista de proxies optimizada para Vercel.
- * Se incluyen proxies que permiten el envío de XML-RPC sin preflight complejo.
+ * Proxies optimizados para no perder el cuerpo de la petición POST.
+ * El error 'no element found' ocurre cuando el proxy convierte el POST en GET 
+ * o elimina el body XML durante la redirección.
  */
 const PROXIES = [
-  { name: 'CORS.IO', fn: (u: string) => `https://corsproxy.io/?${encodeURIComponent(u)}` },
-  { name: 'CodeTabs', fn: (u: string) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}` },
-  { name: 'AllOrigins', fn: (u: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}` },
-  { name: 'Directo', fn: (u: string) => u }
+  { 
+    name: 'CORSProxy.io', 
+    fn: (u: string) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+    headers: { 'Content-Type': 'text/xml' } 
+  },
+  { 
+    name: 'Cloudflare-Worker', 
+    fn: (u: string) => `https://proxy.cors.sh/${u}`,
+    headers: { 'Content-Type': 'application/xml', 'x-cors-api-key': 'temp_897162354' } 
+  },
+  { 
+    name: 'AllOrigins', 
+    fn: (u: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+    headers: { 'Content-Type': 'text/xml' } 
+  },
+  { 
+    name: 'Directo', 
+    fn: (u: string) => u,
+    headers: { 'Content-Type': 'text/xml' } 
+  }
 ];
 
 export class OdooClient {
@@ -70,7 +87,6 @@ export class OdooClient {
   private apiKey: string | null = null;
 
   constructor(private url: string, private db: string) {
-    // Aseguramos que la URL sea HTTPS para Vercel
     this.url = this.url.replace(/\/+$/, '').replace('http://', 'https://');
   }
 
@@ -86,31 +102,37 @@ export class OdooClient {
 
     for (const proxy of PROXIES) {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 20000); // 20 segundos de gracia
+      const timeoutId = setTimeout(() => controller.abort(), 25000); 
 
       try {
         const response = await fetch(proxy.fn(baseUrl), {
           method: 'POST',
-          headers: { 
-            // Algunos proxies fallan si se usa text/xml estricto en el preflight.
-            // Odoo acepta el cuerpo siempre que el XML sea válido.
-            'Content-Type': 'application/xml',
-          },
+          headers: proxy.headers,
           body: xml,
           mode: 'cors',
+          credentials: 'omit',
           signal: controller.signal
         });
 
         clearTimeout(timeoutId);
 
         if (!response.ok) {
-          lastError = new Error(`Proxy ${proxy.name} falló con estado ${response.status}`);
+          lastError = new Error(`Proxy ${proxy.name} devolvió error HTTP ${response.status}`);
           continue;
         }
 
         const text = await response.text();
+        
+        // Si el proxy devuelve el error 'no element found' de Odoo, significa que el proxy 
+        // falló al enviar el body. Saltamos al siguiente proxy.
+        if (text.includes('xml.parsers.expat.ExpatError') || text.includes('no element found')) {
+          console.warn(`Proxy ${proxy.name} perdió el cuerpo de la petición. Reintentando...`);
+          lastError = new Error("El cuerpo XML se perdió en el tránsito.");
+          continue;
+        }
+
         if (!text || !text.includes('methodResponse')) {
-          lastError = new Error(`Respuesta no válida del proxy ${proxy.name}`);
+          lastError = new Error(`Respuesta inválida de ${proxy.name}`);
           continue;
         }
 
@@ -118,7 +140,8 @@ export class OdooClient {
         const fault = doc.querySelector('fault value');
         if (fault) {
           const faultData = parseValue(fault);
-          throw new Error(`Odoo Error: ${faultData.faultString || 'Error en servidor'}`);
+          // Si el error es de Odoo pero NO es un error de transporte (expat), lo lanzamos.
+          throw new Error(`Odoo: ${faultData.faultString || 'Error interno'}`);
         }
 
         const resultNode = doc.querySelector('params param value');
@@ -127,20 +150,12 @@ export class OdooClient {
       } catch (e: any) {
         clearTimeout(timeoutId);
         lastError = e;
-        
-        if (e.message.includes('Odoo Error:')) throw e; // Si es error de Odoo, no seguir reintentando proxies
-        
-        console.warn(`Error usando ${proxy.name}:`, e.message);
-        // Continuar al siguiente proxy
+        if (e.message.startsWith('Odoo:')) throw e;
+        console.warn(`Error en ${proxy.name}:`, e.message);
       }
     }
     
-    // Si llegamos aquí, todos los proxies fallaron
-    const errorMsg = lastError?.message || 'Error de red desconocido';
-    if (errorMsg.toLowerCase().includes('failed to fetch')) {
-      throw new Error("ERROR DE CONEXIÓN: El servidor de Odoo bloquea la petición (CORS) o está caído. Intente recargar.");
-    }
-    throw new Error(`Fallo de conexión tras varios intentos: ${errorMsg}`);
+    throw new Error(`Error crítico: ${lastError?.message || 'Fallo de transporte XML-RPC'}. El servidor Odoo recibió una petición vacía. Verifique si su servidor Odoo permite peticiones desde dominios externos.`);
   }
 
   async authenticate(user: string, apiKey: string): Promise<number | null> {

@@ -12,6 +12,12 @@ export interface Warehouse {
   code: string;
 }
 
+export interface PosConfig {
+  id: number;
+  name: string;
+  warehouse_id: [number, string] | false;
+}
+
 export interface Product {
   id: number;
   name: string;
@@ -50,4 +56,5 @@ export interface UserSession {
   employee_id?: number;
   company_id?: number;
   company_name?: string;
+  employee_data?: Employee;
 }

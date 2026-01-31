@@ -55,7 +55,7 @@ const parseValue = (node: Element): any => {
 };
 
 const PROXIES = [
-  (u: string) => u, // Directo
+  (u: string) => u,
   (u: string) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
   (u: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
 ];
@@ -82,52 +82,62 @@ export class OdooClient {
       try {
         const response = await fetch(proxyFn(baseUrl), {
           method: 'POST',
-          headers: { 'Content-Type': 'text/xml' },
+          headers: { 
+            'Content-Type': 'text/xml',
+            'Accept': 'text/xml'
+          },
           body: xml,
-          signal: AbortSignal.timeout(20000)
+          mode: 'cors'
         });
 
         if (!response.ok) {
-          lastError = new Error(`HTTP ${response.status}`);
+          lastError = new Error(`Servidor Odoo respondió con error HTTP ${response.status}`);
           continue;
         }
 
         const text = await response.text();
-        if (!text) continue;
+        if (!text || !text.includes('methodResponse')) {
+          lastError = new Error("Respuesta XML inválida o vacía");
+          continue;
+        }
 
         const doc = new DOMParser().parseFromString(text, 'text/xml');
         const fault = doc.querySelector('fault value');
         if (fault) {
           const faultData = parseValue(fault);
-          throw new Error(faultData.faultString || 'Error en Odoo');
+          throw new Error(`Error Odoo: ${faultData.faultString || 'Error desconocido'}`);
         }
 
         const resultNode = doc.querySelector('params param value');
         return resultNode ? parseValue(resultNode) : null;
       } catch (e: any) {
         lastError = e;
-        if (e.message.includes('Odoo') || e.message.includes('Logic')) throw e;
+        if (e.message.includes('Odoo')) throw e;
       }
     }
-    throw new Error(lastError?.message || 'Error de conexión');
+    throw new Error(lastError?.message || 'Fallo total de conexión con Odoo');
   }
 
   async authenticate(user: string, apiKey: string): Promise<number | null> {
-    const uid = await this.rpcCall('common', 'authenticate', [this.db, user, apiKey, {}]);
-    if (typeof uid === 'number') {
-      this.uid = uid;
-      this.apiKey = apiKey;
-      return uid;
+    try {
+      const uid = await this.rpcCall('common', 'authenticate', [this.db, user, apiKey, {}]);
+      if (typeof uid === 'number') {
+        this.uid = uid;
+        this.apiKey = apiKey;
+        return uid;
+      }
+      return null;
+    } catch (e: any) {
+      throw e;
     }
-    return null;
   }
 
   async searchRead(model: string, domain: any[], fields: string[], options: any = {}) {
-    if (!this.uid || !this.apiKey) throw new Error("No autenticado");
+    if (!this.uid || !this.apiKey) throw new Error("Sesión no iniciada");
     return await this.rpcCall('object', 'execute_kw', [
       this.db, this.uid, this.apiKey,
       model, 'search_read',
-      [domain], // El dominio va como argumento posicional en Odoo 18
+      [domain],
       { 
         fields, 
         limit: options.limit || 100, 
@@ -138,7 +148,7 @@ export class OdooClient {
   }
 
   async create(model: string, values: any, context: any = {}) {
-    if (!this.uid || !this.apiKey) throw new Error("No autenticado");
+    if (!this.uid || !this.apiKey) throw new Error("Sesión no iniciada");
     return await this.rpcCall('object', 'execute_kw', [
       this.db, this.uid, this.apiKey,
       model, 'create',

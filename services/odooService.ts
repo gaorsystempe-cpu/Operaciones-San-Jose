@@ -79,6 +79,9 @@ export class OdooClient {
     let lastError: any = null;
 
     for (const proxyFn of PROXIES) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 12000); // 12s timeout para evitar HTTP 408 estancado
+
       try {
         const response = await fetch(proxyFn(baseUrl), {
           method: 'POST',
@@ -87,17 +90,25 @@ export class OdooClient {
             'Accept': 'text/xml'
           },
           body: xml,
-          mode: 'cors'
+          mode: 'cors',
+          signal: controller.signal
         });
 
+        clearTimeout(timeoutId);
+
+        if (response.status === 408) {
+          lastError = new Error("Tiempo de espera agotado (Proxy 408). Reintentando...");
+          continue;
+        }
+
         if (!response.ok) {
-          lastError = new Error(`Servidor Odoo respondió con error HTTP ${response.status}`);
+          lastError = new Error(`Servidor respondió con error HTTP ${response.status}`);
           continue;
         }
 
         const text = await response.text();
         if (!text || !text.includes('methodResponse')) {
-          lastError = new Error("Respuesta XML inválida o vacía");
+          lastError = new Error("Respuesta XML inválida");
           continue;
         }
 
@@ -111,11 +122,16 @@ export class OdooClient {
         const resultNode = doc.querySelector('params param value');
         return resultNode ? parseValue(resultNode) : null;
       } catch (e: any) {
+        clearTimeout(timeoutId);
         lastError = e;
+        if (e.name === 'AbortError') {
+          lastError = new Error("La conexión tardó demasiado (Timeout)");
+          continue;
+        }
         if (e.message.includes('Odoo')) throw e;
       }
     }
-    throw new Error(lastError?.message || 'Fallo total de conexión con Odoo');
+    throw new Error(lastError?.message || 'Fallo de conexión. Verifique la URL de Odoo o su conexión a internet.');
   }
 
   async authenticate(user: string, apiKey: string): Promise<number | null> {

@@ -109,7 +109,7 @@ const App: React.FC = () => {
       if (currentWId) {
         setMonitorWarehouseId(currentWId);
         const pData = await client.searchRead('product.template', [['purchase_ok', '=', true]], ['name', 'default_code', 'qty_available', 'product_variant_id', 'uom_id'], { limit: 400, context: getContext(companyId, Number(currentWId)) });
-        // Ordenamiento solicitado: 0 a más
+        // Ordenamiento: Cantidad 0 a más
         const sortedPData = (pData || []).sort((a: any, b: any) => (a.qty_available || 0) - (b.qty_available || 0));
         setProducts(sortedPData);
       }
@@ -198,7 +198,7 @@ const App: React.FC = () => {
       const warehouseId = Number(selectedWarehouseId);
       const warehouseName = warehouses.find(w => w.id === warehouseId)?.name || 'Desconocido';
       
-      // Buscar el Proveedor exacto solicitado: CADENA DE BOTICAS SAN JOSE S.A.C.
+      // Proveedor exacto: CADENA DE BOTICAS SAN JOSE S.A.C.
       let partnerId = 1;
       const partnerSearch = await client.searchRead('res.partner', [['name', '=', "CADENA DE BOTICAS SAN JOSE S.A.C."]], ['id'], { limit: 1 });
       if (partnerSearch && partnerSearch.length > 0) {
@@ -219,7 +219,7 @@ const App: React.FC = () => {
         date_planned: scheduledDate + " 23:59:59"
       }]);
 
-      // Formato solicitado por el usuario para las notas del pedido según la imagen
+      // Formato solicitado según la imagen
       const formattedNotes = `REQUERIMIENTO APP OPERACIONES\nSolicitado por: ${session.name}\nSede Destino: ${warehouseName}\nNotas: ${customNotes || 'Sin observaciones'}`;
 
       const orderData = { 
@@ -232,7 +232,6 @@ const App: React.FC = () => {
         notes: formattedNotes
       };
 
-      // Estabilidad XML-RPC v14-v18: Campos básicos obligatorios
       const resId = await client.create('purchase.order', orderData, getContext(session.company_id));
       
       if (resId) {
@@ -289,15 +288,15 @@ const App: React.FC = () => {
             <div className="relative z-10 flex flex-col h-full justify-between">
               <div className="text-4xl font-black text-white italic">O</div>
               <div className="space-y-4 text-left">
-                <h1 className="text-3xl font-black text-white leading-tight uppercase tracking-tighter">SJS ENTERPRISE<br/>HUB OPERATIVO</h1>
-                <p className="text-white/60 text-[10px] font-bold uppercase tracking-widest">San José S.A.C.</p>
+                <h1 className="text-3xl font-black text-white leading-tight uppercase tracking-tighter">CENTRO DE<br/>OPERACIONES<br/>BOTICA SAN JOSE</h1>
+                <p className="text-white/60 text-[10px] font-bold uppercase tracking-widest">CADENA DE BOTICAS SAN JOSE S.A.C.</p>
               </div>
             </div>
           </div>
           <div className="w-full lg:w-1/2 p-12 flex flex-col justify-center gap-10">
             <div className="space-y-2 text-left">
-              <h2 className="text-2xl font-black text-odoo-dark uppercase italic">Bienvenido</h2>
-              <p className="text-[10px] font-bold text-odoo-text/40 uppercase tracking-widest">Portal de Sincronización Odoo</p>
+              <h2 className="text-2xl font-black text-odoo-dark uppercase italic">Iniciar Sesión</h2>
+              <p className="text-[10px] font-bold text-odoo-text/40 uppercase tracking-widest">Portal Maestro de Operaciones</p>
             </div>
             <form onSubmit={handleInitialAuth} className="space-y-6">
               <div className="space-y-2 text-left">
@@ -308,7 +307,7 @@ const App: React.FC = () => {
                 </div>
               </div>
               <button type="submit" className="w-full odoo-gradient text-white py-4 rounded-2xl font-black uppercase text-xs tracking-widest shadow-lg hover:brightness-110 active:scale-95 transition-all">
-                {loading ? <Loader2 className="animate-spin mx-auto" size={20}/> : 'Acceder'}
+                {loading ? <Loader2 className="animate-spin mx-auto" size={20}/> : 'Acceder al Centro'}
               </button>
               {errorLog && <div className="p-4 bg-rose-50 border border-rose-100 rounded-xl flex items-start gap-3 text-rose-600 text-[10px] font-bold uppercase leading-tight animate-pulse"><AlertCircle size={16} className="shrink-0 mt-0.5"/> {errorLog}</div>}
             </form>
@@ -324,7 +323,7 @@ const App: React.FC = () => {
         <div className="h-20 flex items-center px-6 lg:px-8 border-b border-white/5">
           <div className="w-10 h-10 odoo-gradient rounded-xl flex items-center justify-center text-white italic font-black text-xl shadow-lg rotate-3 shadow-odoo-purple/20">O</div>
           <div className="ml-4 hidden lg:block overflow-hidden text-left">
-            <h2 className="font-black text-white text-[11px] uppercase tracking-tighter italic leading-none">SJS OPERACIONES</h2>
+            <h2 className="font-black text-white text-[11px] uppercase tracking-tighter italic leading-none">CENTRO SJS</h2>
             <p className="text-odoo-teal text-[8px] font-bold tracking-widest uppercase mt-1">Boticas San José</p>
           </div>
         </div>
@@ -334,7 +333,7 @@ const App: React.FC = () => {
               <item.icon size={20} className={activeTab === item.id ? 'text-white' : 'group-hover:text-odoo-teal'} />
               <div className="ml-4 text-left hidden lg:block">
                 <p className="font-black text-[11px] uppercase tracking-wider leading-none">{item.label}</p>
-                <p className={`text-[8px] mt-1 font-bold uppercase ${activeTab === item.id ? 'text-white/50' : 'text-gray-600'}`}>SJS Enterprise</p>
+                <p className={`text-[8px] mt-1 font-bold uppercase ${activeTab === item.id ? 'text-white/50' : 'text-gray-600'}`}>SJS Operaciones</p>
               </div>
             </button>
           ))}
@@ -380,8 +379,8 @@ const App: React.FC = () => {
                 <div className="bg-white rounded-3xl saas-shadow border border-odoo-border overflow-hidden animate-saas">
                   <div className="p-8 bg-odoo-gray/40 border-b border-odoo-border flex justify-between items-center flex-wrap gap-4">
                     <div className="space-y-1 text-left">
-                      <h2 className="text-xl font-black text-odoo-dark uppercase italic leading-none">Generar Requerimiento SJS</h2>
-                      <p className="text-[9px] font-bold text-odoo-text/40 uppercase tracking-widest">Pedido Directo a Compras Odoo</p>
+                      <h2 className="text-xl font-black text-odoo-dark uppercase italic leading-none">Nuevo Requerimiento</h2>
+                      <p className="text-[9px] font-bold text-odoo-text/40 uppercase tracking-widest">Pedido Directo a Compras San José</p>
                     </div>
                     <button onClick={() => setShowProductModal(true)} className="odoo-gradient text-white px-6 py-3 rounded-xl font-black text-[10px] uppercase flex items-center gap-2 shadow-lg hover:brightness-110 transition-all"><Plus size={18}/> Añadir Insumo</button>
                   </div>
@@ -403,10 +402,10 @@ const App: React.FC = () => {
                         {selectedWarehouseId && (
                            <div className="bg-emerald-50 border-2 border-emerald-100 rounded-2xl p-5 animate-saas shadow-sm">
                               <div className="flex items-center gap-3 text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-3">
-                                 <Store size={14}/> Sede Vinculada (Referencia SJS)
+                                 <Store size={14}/> Sede Vinculada (SJS)
                               </div>
                               <div className="space-y-2">
-                                 <p className="text-[8px] font-bold text-emerald-800/60 uppercase tracking-tight italic leading-relaxed">Usted está pidiendo insumos para las boticas:</p>
+                                 <p className="text-[8px] font-bold text-emerald-800/60 uppercase tracking-tight italic leading-relaxed">Usted está pidiendo insumos para:</p>
                                  <div className="flex flex-wrap gap-2">
                                     {getRelatedPos(Number(selectedWarehouseId)).length > 0 ? (
                                        getRelatedPos(Number(selectedWarehouseId)).map(pos => (
@@ -415,15 +414,9 @@ const App: React.FC = () => {
                                           </span>
                                        ))
                                     ) : (
-                                       <span className="text-[9px] font-black text-rose-400 italic bg-white p-2 rounded-lg border border-rose-100">Sin mapeo visual. Contacte soporte.</span>
+                                       <span className="text-[9px] font-black text-rose-400 italic bg-white p-2 rounded-lg border border-rose-100">Sin mapeo visual.</span>
                                     )}
                                  </div>
-                              </div>
-                              <div className="mt-4 flex items-center gap-2 p-2.5 bg-white/60 rounded-xl border border-emerald-100">
-                                 <div className="p-1.5 bg-emerald-500 text-white rounded-lg"><Map size={14}/></div>
-                                 <p className="text-[7.5px] font-black text-emerald-800 uppercase leading-tight italic">
-                                    Los productos se cargarán al stock físico de {warehouses.find(w => w.id === selectedWarehouseId)?.name}.
-                                 </p>
                               </div>
                            </div>
                         )}
@@ -548,9 +541,6 @@ const App: React.FC = () => {
                                  </td>
                                </tr>
                              ))}
-                             {criticalProducts.length === 0 && !loading && (
-                               <tr><td colSpan={3} className="px-8 py-12 text-center text-odoo-text/30 font-black uppercase text-[10px] italic">No se encontraron productos con stock crítico</td></tr>
-                             )}
                            </tbody>
                         </table>
                      </div>
@@ -618,7 +608,7 @@ const App: React.FC = () => {
                <div className="bg-white p-12 rounded-3xl saas-shadow border border-odoo-border space-y-10">
                   <div className="text-center space-y-4">
                      <div className="w-16 h-16 odoo-gradient text-white rounded-2xl flex items-center justify-center mx-auto shadow-xl rotate-3 shadow-odoo-purple/40"><Database size={32}/></div>
-                     <h2 className="text-2xl font-black text-odoo-dark uppercase italic tracking-tighter leading-none">Ajustes SJS Hub</h2>
+                     <h2 className="text-2xl font-black text-odoo-dark uppercase italic tracking-tighter leading-none">Ajustes SJS</h2>
                      <p className="text-[10px] font-bold text-odoo-text/40 uppercase tracking-widest">Instancia v14-v18 Enterprise</p>
                   </div>
                   <div className="space-y-6 pt-6 text-left">
@@ -627,7 +617,7 @@ const App: React.FC = () => {
                        <input className="w-full bg-odoo-gray border-2 border-transparent px-6 py-4 rounded-2xl text-[12px] font-bold outline-none focus:border-odoo-purple shadow-inner" value={config.url} onChange={e => setConfig({...config, url: e.target.value})} />
                     </div>
                   </div>
-                  <button onClick={() => { localStorage.setItem('odoo_ops_v18_config', JSON.stringify(config)); alert("Conexión Guardada Correctamente."); }} className="w-full odoo-gradient text-white py-4 rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl hover:brightness-110 active:scale-95 transition-all">Guardar Ajustes</button>
+                  <button onClick={() => { localStorage.setItem('odoo_ops_v18_config', JSON.stringify(config)); alert("Conexión Guardada."); }} className="w-full odoo-gradient text-white py-4 rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl hover:brightness-110 active:scale-95 transition-all">Guardar Ajustes</button>
                </div>
              </div>
           )}

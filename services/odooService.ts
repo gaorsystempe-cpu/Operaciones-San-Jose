@@ -54,8 +54,13 @@ const parseValue = (node: Element): any => {
   }
 };
 
+/**
+ * Lista de proxies optimizada para Vercel.
+ * Se incluyen proxies que permiten el envío de XML-RPC sin preflight complejo.
+ */
 const PROXIES = [
-  { name: 'CORS Proxy IO', fn: (u: string) => `https://corsproxy.io/?${encodeURIComponent(u)}` },
+  { name: 'CORS.IO', fn: (u: string) => `https://corsproxy.io/?${encodeURIComponent(u)}` },
+  { name: 'CodeTabs', fn: (u: string) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}` },
   { name: 'AllOrigins', fn: (u: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}` },
   { name: 'Directo', fn: (u: string) => u }
 ];
@@ -65,7 +70,8 @@ export class OdooClient {
   private apiKey: string | null = null;
 
   constructor(private url: string, private db: string) {
-    this.url = this.url.replace(/\/+$/, '');
+    // Aseguramos que la URL sea HTTPS para Vercel
+    this.url = this.url.replace(/\/+$/, '').replace('http://', 'https://');
   }
 
   setAuth(uid: number, apiKey: string) {
@@ -80,13 +86,15 @@ export class OdooClient {
 
     for (const proxy of PROXIES) {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000); 
+      const timeoutId = setTimeout(() => controller.abort(), 20000); // 20 segundos de gracia
 
       try {
         const response = await fetch(proxy.fn(baseUrl), {
           method: 'POST',
           headers: { 
-            'Content-Type': 'text/xml'
+            // Algunos proxies fallan si se usa text/xml estricto en el preflight.
+            // Odoo acepta el cuerpo siempre que el XML sea válido.
+            'Content-Type': 'application/xml',
           },
           body: xml,
           mode: 'cors',
@@ -95,19 +103,14 @@ export class OdooClient {
 
         clearTimeout(timeoutId);
 
-        if (response.status === 408 || response.status >= 500) {
-          lastError = new Error(`Proxy ${proxy.name} ocupado (${response.status})`);
-          continue;
-        }
-
         if (!response.ok) {
-          lastError = new Error(`${proxy.name}: HTTP ${response.status}`);
+          lastError = new Error(`Proxy ${proxy.name} falló con estado ${response.status}`);
           continue;
         }
 
         const text = await response.text();
         if (!text || !text.includes('methodResponse')) {
-          lastError = new Error(`Respuesta no válida de ${proxy.name}`);
+          lastError = new Error(`Respuesta no válida del proxy ${proxy.name}`);
           continue;
         }
 
@@ -115,27 +118,29 @@ export class OdooClient {
         const fault = doc.querySelector('fault value');
         if (fault) {
           const faultData = parseValue(fault);
-          throw new Error(`Odoo: ${faultData.faultString || 'Error interno'}`);
+          throw new Error(`Odoo Error: ${faultData.faultString || 'Error en servidor'}`);
         }
 
         const resultNode = doc.querySelector('params param value');
         return resultNode ? parseValue(resultNode) : null;
+
       } catch (e: any) {
         clearTimeout(timeoutId);
         lastError = e;
         
-        if (e.name === 'AbortError') {
-          lastError = new Error(`Timeout en ${proxy.name}. Reintentando con otro...`);
-          continue;
-        }
-
-        if (e.message.includes('Odoo:')) throw e;
+        if (e.message.includes('Odoo Error:')) throw e; // Si es error de Odoo, no seguir reintentando proxies
         
-        console.warn(`Fallo ${proxy.name}: ${e.message}`);
+        console.warn(`Error usando ${proxy.name}:`, e.message);
+        // Continuar al siguiente proxy
       }
     }
     
-    throw new Error(`Error de conexión: ${lastError?.message || 'No se pudo contactar con Odoo desde Vercel.'}. Intente refrescar la página.`);
+    // Si llegamos aquí, todos los proxies fallaron
+    const errorMsg = lastError?.message || 'Error de red desconocido';
+    if (errorMsg.toLowerCase().includes('failed to fetch')) {
+      throw new Error("ERROR DE CONEXIÓN: El servidor de Odoo bloquea la petición (CORS) o está caído. Intente recargar.");
+    }
+    throw new Error(`Fallo de conexión tras varios intentos: ${errorMsg}`);
   }
 
   async authenticate(user: string, apiKey: string): Promise<number | null> {
@@ -149,7 +154,7 @@ export class OdooClient {
   }
 
   async searchRead(model: string, domain: any[], fields: string[], options: any = {}) {
-    if (!this.uid || !this.apiKey) throw new Error("Inicie sesión");
+    if (!this.uid || !this.apiKey) throw new Error("Sesión no iniciada");
     return await this.rpcCall('object', 'execute_kw', [
       this.db, this.uid, this.apiKey,
       model, 'search_read',
@@ -164,7 +169,7 @@ export class OdooClient {
   }
 
   async create(model: string, values: any, context: any = {}) {
-    if (!this.uid || !this.apiKey) throw new Error("Inicie sesión");
+    if (!this.uid || !this.apiKey) throw new Error("Sesión no iniciada");
     return await this.rpcCall('object', 'execute_kw', [
       this.db, this.uid, this.apiKey,
       model, 'create',

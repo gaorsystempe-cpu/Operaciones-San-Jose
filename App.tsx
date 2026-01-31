@@ -129,7 +129,7 @@ const App: React.FC = () => {
       
       setSyncStatus('online');
     } catch (e: any) {
-      setErrorLog(`Error de Conexión: ${e.message}`);
+      setErrorLog(`${e.message}`);
       setSyncStatus('offline');
     } finally { setLoading(false); }
   }, [client, config.apiKey, getContext, monitorWarehouseId, selectedWarehouseId]);
@@ -319,7 +319,7 @@ const App: React.FC = () => {
               <button type="submit" className="w-full odoo-gradient text-white py-4 rounded-2xl font-black uppercase text-xs tracking-widest shadow-lg hover:brightness-110 active:scale-95 transition-all">
                 {loading ? <Loader2 className="animate-spin mx-auto" size={20}/> : 'Acceder al Centro'}
               </button>
-              {errorLog && <div className="p-4 bg-rose-50 border border-rose-100 rounded-xl flex items-start gap-3 text-rose-600 text-[10px] font-bold uppercase leading-tight animate-pulse"><AlertCircle size={16} className="shrink-0 mt-0.5"/> {errorLog}</div>}
+              {errorLog && <div className="p-4 bg-rose-50 border border-rose-100 rounded-xl flex items-start gap-3 text-rose-600 text-[10px] font-bold uppercase leading-tight animate-saas"><AlertCircle size={16} className="shrink-0 mt-0.5"/> {errorLog}</div>}
             </form>
           </div>
         </div>

@@ -25,8 +25,12 @@ const DEFAULT_CONFIG: AppConfig = {
 
 const App: React.FC = () => {
   const [config, setConfig] = useState<AppConfig>(() => {
-    const saved = localStorage.getItem('odoo_ops_v18_config');
-    return saved ? JSON.parse(saved) : DEFAULT_CONFIG;
+    try {
+      const saved = localStorage.getItem('odoo_ops_v18_config');
+      return saved ? JSON.parse(saved) : DEFAULT_CONFIG;
+    } catch (e) {
+      return DEFAULT_CONFIG;
+    }
   });
 
   const [view, setView] = useState<'login' | 'app'>('login');
@@ -41,8 +45,12 @@ const App: React.FC = () => {
   
   const [products, setProducts] = useState<any[]>([]);
   const [cart, setCart] = useState<any[]>(() => {
-    const saved = localStorage.getItem('sanjose_cart_draft');
-    return saved ? JSON.parse(saved) : [];
+    try {
+      const saved = localStorage.getItem('sanjose_cart_draft');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
   });
   
   const [selectedWarehouseId, setSelectedWarehouseId] = useState<number | ''>('');
@@ -59,7 +67,13 @@ const App: React.FC = () => {
   
   const client = useMemo(() => new OdooClient(config.url, config.db), [config.url, config.db]);
 
-  useEffect(() => { localStorage.setItem('sanjose_cart_draft', JSON.stringify(cart)); }, [cart]);
+  useEffect(() => { 
+    try {
+      localStorage.setItem('sanjose_cart_draft', JSON.stringify(cart)); 
+    } catch (e) {
+      console.error("Error saving cart:", e);
+    }
+  }, [cart]);
 
   const getContext = useCallback((companyId: number, warehouseId?: number) => ({
     company_id: companyId,
@@ -109,7 +123,6 @@ const App: React.FC = () => {
       if (currentWId) {
         setMonitorWarehouseId(currentWId);
         const pData = await client.searchRead('product.template', [['purchase_ok', '=', true]], ['name', 'default_code', 'qty_available', 'product_variant_id', 'uom_id'], { limit: 400, context: getContext(companyId, Number(currentWId)) });
-        // Ordenamiento: Cantidad 0 a más
         const sortedPData = (pData || []).sort((a: any, b: any) => (a.qty_available || 0) - (b.qty_available || 0));
         setProducts(sortedPData);
       }
@@ -172,7 +185,6 @@ const App: React.FC = () => {
     if (!session?.company_id) return;
     setLoading(true);
     try {
-      // Ordenamiento por cantidad: 0 a más
       const data = await client.searchRead('product.template', [['purchase_ok', '=', true], ['qty_available', '<=', stockLevelFilter]], ['name', 'default_code', 'qty_available', 'product_variant_id'], { limit: 100, context: getContext(session.company_id, wId), order: 'qty_available asc' });
       const sortedData = (data || []).sort((a: any, b: any) => (a.qty_available || 0) - (b.qty_available || 0));
       setCriticalProducts(sortedData);
@@ -198,7 +210,6 @@ const App: React.FC = () => {
       const warehouseId = Number(selectedWarehouseId);
       const warehouseName = warehouses.find(w => w.id === warehouseId)?.name || 'Desconocido';
       
-      // Proveedor exacto: CADENA DE BOTICAS SAN JOSE S.A.C.
       let partnerId = 1;
       const partnerSearch = await client.searchRead('res.partner', [['name', '=', "CADENA DE BOTICAS SAN JOSE S.A.C."]], ['id'], { limit: 1 });
       if (partnerSearch && partnerSearch.length > 0) {
@@ -219,7 +230,6 @@ const App: React.FC = () => {
         date_planned: scheduledDate + " 23:59:59"
       }]);
 
-      // Formato solicitado según la imagen
       const formattedNotes = `REQUERIMIENTO APP OPERACIONES\nSolicitado por: ${session.name}\nSede Destino: ${warehouseName}\nNotas: ${customNotes || 'Sin observaciones'}`;
 
       const orderData = { 

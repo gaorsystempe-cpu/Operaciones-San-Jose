@@ -453,7 +453,21 @@ const App: React.FC = () => {
                               <td className="px-6 py-4 text-center">
                                 <div className="inline-flex items-center gap-3 bg-odoo-gray p-1 rounded-xl border border-odoo-border">
                                   <button onClick={() => setCart(cart.map((c, i) => i === idx ? {...c, qty: Math.max(1, c.qty - 1)} : c))} className="w-6 h-6 rounded bg-white shadow flex items-center justify-center font-black text-odoo-purple">-</button>
-                                  <span className="font-black text-[12px] w-6 text-center">{item.qty}</span>
+                                  <input 
+                                    type="number" 
+                                    className="bg-transparent font-black text-[12px] w-12 text-center outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" 
+                                    value={item.qty} 
+                                    onChange={(e) => {
+                                      const val = parseInt(e.target.value);
+                                      setCart(cart.map((c, i) => i === idx ? {...c, qty: isNaN(val) ? 0 : val} : c));
+                                    }}
+                                    onBlur={(e) => {
+                                      const val = parseInt(e.target.value);
+                                      if (isNaN(val) || val < 1) {
+                                        setCart(cart.map((c, i) => i === idx ? {...c, qty: 1} : c));
+                                      }
+                                    }}
+                                  />
                                   <button onClick={() => setCart(cart.map((c, i) => i === idx ? {...c, qty: c.qty + 1} : c))} className="w-6 h-6 rounded bg-white shadow flex items-center justify-center font-black text-odoo-purple">+</button>
                                 </div>
                               </td>

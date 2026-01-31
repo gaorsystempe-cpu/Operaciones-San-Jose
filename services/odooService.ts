@@ -54,34 +54,6 @@ const parseValue = (node: Element): any => {
   }
 };
 
-/**
- * Proxies optimizados para no perder el cuerpo de la petición POST.
- * El error 'no element found' ocurre cuando el proxy convierte el POST en GET 
- * o elimina el body XML durante la redirección.
- */
-const PROXIES = [
-  { 
-    name: 'CORSProxy.io', 
-    fn: (u: string) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
-    headers: { 'Content-Type': 'text/xml' } 
-  },
-  { 
-    name: 'Cloudflare-Worker', 
-    fn: (u: string) => `https://proxy.cors.sh/${u}`,
-    headers: { 'Content-Type': 'application/xml', 'x-cors-api-key': 'temp_897162354' } 
-  },
-  { 
-    name: 'AllOrigins', 
-    fn: (u: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-    headers: { 'Content-Type': 'text/xml' } 
-  },
-  { 
-    name: 'Directo', 
-    fn: (u: string) => u,
-    headers: { 'Content-Type': 'text/xml' } 
-  }
-];
-
 export class OdooClient {
   private uid: number | null = null;
   private apiKey: string | null = null;
@@ -97,42 +69,65 @@ export class OdooClient {
 
   async rpcCall(endpoint: string, methodName: string, params: any[]) {
     const xml = `<?xml version="1.0" encoding="UTF-8"?><methodCall><methodName>${methodName}</methodName><params>${params.map(p => `<param>${serialize(p)}</param>`).join('')}</params></methodCall>`;
-    const baseUrl = `${this.url}/xmlrpc/2/${endpoint}`;
+    const odooUrl = `${this.url}/xmlrpc/2/${endpoint}`;
+    
+    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    
+    // Stratetiges for connection
+    const strategies = [
+      { 
+        name: 'Vercel Proxy', 
+        use: !isLocal,
+        call: async () => {
+          const res = await fetch('/api/odoo-proxy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: odooUrl, body: xml })
+          });
+          return res;
+        }
+      },
+      {
+        name: 'CORSProxy.io',
+        use: true,
+        call: async () => fetch(`https://corsproxy.io/?${encodeURIComponent(odooUrl)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/xml' },
+          body: xml
+        })
+      },
+      {
+        name: 'AllOrigins',
+        use: true,
+        call: async () => fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(odooUrl)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/xml' },
+          body: xml
+        })
+      }
+    ].filter(s => s.use);
+
     let lastError: any = null;
 
-    for (const proxy of PROXIES) {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 25000); 
-
+    for (const strategy of strategies) {
       try {
-        const response = await fetch(proxy.fn(baseUrl), {
-          method: 'POST',
-          headers: proxy.headers,
-          body: xml,
-          mode: 'cors',
-          credentials: 'omit',
-          signal: controller.signal
-        });
-
-        clearTimeout(timeoutId);
+        const response = await strategy.call();
 
         if (!response.ok) {
-          lastError = new Error(`Proxy ${proxy.name} devolvió error HTTP ${response.status}`);
+          lastError = new Error(`${strategy.name} status ${response.status}`);
           continue;
         }
 
         const text = await response.text();
         
-        // Si el proxy devuelve el error 'no element found' de Odoo, significa que el proxy 
-        // falló al enviar el body. Saltamos al siguiente proxy.
-        if (text.includes('xml.parsers.expat.ExpatError') || text.includes('no element found')) {
-          console.warn(`Proxy ${proxy.name} perdió el cuerpo de la petición. Reintentando...`);
-          lastError = new Error("El cuerpo XML se perdió en el tránsito.");
+        // ExpatError mitigation: check if body arrived
+        if (!text || text.includes('xml.parsers.expat.ExpatError') || text.includes('no element found')) {
+          lastError = new Error(`${strategy.name} failed to deliver body to Odoo.`);
           continue;
         }
 
-        if (!text || !text.includes('methodResponse')) {
-          lastError = new Error(`Respuesta inválida de ${proxy.name}`);
+        if (!text.includes('methodResponse')) {
+          lastError = new Error(`Invalid response from ${strategy.name}`);
           continue;
         }
 
@@ -140,22 +135,20 @@ export class OdooClient {
         const fault = doc.querySelector('fault value');
         if (fault) {
           const faultData = parseValue(fault);
-          // Si el error es de Odoo pero NO es un error de transporte (expat), lo lanzamos.
-          throw new Error(`Odoo: ${faultData.faultString || 'Error interno'}`);
+          throw new Error(`Odoo: ${faultData.faultString || 'Unknown Error'}`);
         }
 
         const resultNode = doc.querySelector('params param value');
         return resultNode ? parseValue(resultNode) : null;
 
       } catch (e: any) {
-        clearTimeout(timeoutId);
-        lastError = e;
         if (e.message.startsWith('Odoo:')) throw e;
-        console.warn(`Error en ${proxy.name}:`, e.message);
+        lastError = e;
+        console.warn(`Error with ${strategy.name}:`, e.message);
       }
     }
     
-    throw new Error(`Error crítico: ${lastError?.message || 'Fallo de transporte XML-RPC'}. El servidor Odoo recibió una petición vacía. Verifique si su servidor Odoo permite peticiones desde dominios externos.`);
+    throw new Error(`Error de conexión: ${lastError?.message || 'XML-RPC Body Empty'}. No se pudo establecer una conexión estable con Odoo desde este entorno.`);
   }
 
   async authenticate(user: string, apiKey: string): Promise<number | null> {

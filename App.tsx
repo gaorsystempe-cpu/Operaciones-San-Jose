@@ -108,12 +108,20 @@ const App: React.FC = () => {
 
       if (!userSearch || userSearch.length === 0) throw new Error("Usuario no encontrado.");
 
-      const loginEmail = userSearch[0].login;
+      const loginEmail = userSearch[0].login.toLowerCase();
       const userName = userSearch[0].name;
 
+      // LÓGICA DE ROLES SEGÚN SOLICITUD
       let role: 'superadmin' | 'admin' | 'employee' = 'employee';
-      if (loginEmail === 'soporte@sanjose.pe' || loginEmail === 'soporte@facturaclic.pe') role = 'superadmin';
-      else if (userName.toLowerCase().includes('lourdes') || userName.toLowerCase().includes('admin')) role = 'admin';
+      
+      // Superadmins: soporte y Jose Herrera
+      if (loginEmail === 'soporte@facturaclic.pe' || loginEmail === 'soporte@sanjose.pe' || userName.toLowerCase().includes('jose herrera')) {
+        role = 'superadmin';
+      } 
+      // Admins: admin1 y Lourdes
+      else if (loginEmail === 'admin1@sanjose.pe' || userName.toLowerCase().includes('lourdes')) {
+        role = 'admin';
+      }
 
       setSession({
         id: uid,
@@ -166,7 +174,7 @@ const App: React.FC = () => {
     return [
       { id: 'purchase', label: 'Requerimientos', icon: ClipboardList, roles: ['superadmin', 'admin', 'employee'] },
       { id: 'monitor', label: 'Monitor Stock', icon: LayoutGrid, roles: ['superadmin', 'admin', 'employee'] },
-      { id: 'hr', label: session?.role === 'employee' ? 'Mi Horario' : 'Personal / RRHH', icon: UsersIcon, roles: ['superadmin', 'admin', 'employee'] },
+      { id: 'hr', label: (session?.role === 'employee' ? 'Mi Horario' : 'Personal / RRHH'), icon: UsersIcon, roles: ['superadmin', 'admin', 'employee'] },
       { id: 'settings', label: 'Ajustes', icon: Settings, roles: ['superadmin'] }
     ].filter(i => i.roles.includes(session?.role));
   }, [session]);
@@ -188,11 +196,11 @@ const App: React.FC = () => {
           <div className="w-full lg:w-1/2 p-12 flex flex-col justify-center gap-10">
             <div className="space-y-2">
               <h2 className="text-2xl font-black text-odoo-dark uppercase">Bienvenido</h2>
-              <p className="text-[10px] font-bold text-odoo-text/40 uppercase tracking-widest">Ingrese sus credenciales de Odoo</p>
+              <p className="text-[10px] font-bold text-odoo-text/40 uppercase tracking-widest">Portal Administrativo Enterprise</p>
             </div>
             <form onSubmit={handleInitialAuth} className="space-y-6">
               <div className="space-y-2">
-                <label className="text-[10px] font-black text-odoo-text uppercase tracking-widest ml-1">Email / Identidad</label>
+                <label className="text-[10px] font-black text-odoo-text uppercase tracking-widest ml-1">Email / Usuario</label>
                 <div className="relative">
                   <UserIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-odoo-text/30" size={18}/>
                   <input type="text" className="w-full pl-12 pr-6 py-4 bg-odoo-gray/50 border-2 border-transparent focus:border-odoo-purple rounded-2xl text-sm font-bold outline-none transition-all" placeholder="usuario@sanjose.pe" value={loginInput} onChange={e => setLoginInput(e.target.value)} />
@@ -243,9 +251,9 @@ const App: React.FC = () => {
 
       <div className="flex-1 flex flex-col overflow-hidden">
         <header className="h-20 glass-header flex items-center justify-between px-6 lg:px-10 shrink-0 z-40">
-           <div className="flex items-center gap-4">
+           <div className="flex items-center gap-4 text-left">
               <div className="w-10 h-10 odoo-gradient rounded-xl flex items-center justify-center text-white font-black text-sm uppercase shadow-lg rotate-3">{session?.name.slice(0,2)}</div>
-              <div className="flex flex-col text-left">
+              <div className="flex flex-col">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-black text-odoo-dark uppercase">{session?.name}</span>
                   <span className="px-1.5 py-0.5 bg-odoo-purple/10 text-odoo-purple text-[7px] font-black rounded uppercase border border-odoo-purple/10">{session?.role}</span>
@@ -354,7 +362,7 @@ const App: React.FC = () => {
                <aside className="w-full lg:w-72 space-y-6 shrink-0">
                   <div className="bg-white p-6 rounded-3xl border border-odoo-border saas-shadow space-y-6">
                      <h3 className="text-[10px] font-black text-odoo-dark uppercase tracking-widest">Sedes San José</h3>
-                     <div className="space-y-1.5 max-h-[400px] overflow-y-auto custom-scrollbar">
+                     <div className="space-y-1.5 max-h-[400px] overflow-y-auto custom-scrollbar text-left">
                         {warehouses.map(w => (
                            <button key={w.id} onClick={() => loadMonitorStock(w.id)} className={`w-full flex items-center justify-between p-3.5 rounded-xl border-2 text-left transition-all ${monitorWarehouseId === w.id ? 'bg-odoo-purple border-odoo-purple text-white shadow-lg' : 'bg-odoo-gray/50 border-transparent hover:border-odoo-border text-odoo-text'}`}>
                               <span className="text-[11px] font-black uppercase tracking-tight truncate">{w.name}</span>
@@ -371,7 +379,7 @@ const App: React.FC = () => {
                <section className="flex-1">
                   <div className="bg-white p-8 rounded-3xl border border-odoo-border saas-shadow space-y-8 overflow-hidden">
                      <div className="flex justify-between items-end">
-                        <div className="space-y-1">
+                        <div className="space-y-1 text-left">
                            <h2 className="text-2xl font-black text-odoo-dark uppercase flex items-center gap-4 italic">Existencias <Layers className="text-odoo-teal" size={24}/></h2>
                            <p className="text-[10px] font-bold text-odoo-text/40 uppercase tracking-widest">{warehouses.find(w => w.id === monitorWarehouseId)?.name || '...'}</p>
                         </div>
@@ -412,39 +420,47 @@ const App: React.FC = () => {
           {activeTab === 'hr' && (
              <div className="max-w-6xl mx-auto space-y-8 pb-20 animate-saas text-left">
                 {session?.role === 'employee' ? (
-                   <div className="bg-white p-10 rounded-3xl border border-odoo-border saas-shadow grid grid-cols-1 lg:grid-cols-3 gap-8">
+                   // VISTA PRIVADA PARA EMPLEADOS: SOLO SU USUARIO
+                   <div className="bg-white p-10 rounded-3xl border border-odoo-border saas-shadow grid grid-cols-1 lg:grid-cols-3 gap-8 text-left">
                       <div className="lg:col-span-1 space-y-6">
-                        <div className="w-16 h-16 odoo-gradient rounded-2xl flex items-center justify-center text-white italic font-black text-2xl mb-8">{session?.name.slice(0,2)}</div>
+                        <div className="w-16 h-16 odoo-gradient rounded-2xl flex items-center justify-center text-white italic font-black text-2xl mb-8 shadow-lg rotate-3">{session?.name.slice(0,2)}</div>
                         <h2 className="text-3xl font-black text-odoo-dark uppercase leading-none">{session?.name}</h2>
                         <div className="space-y-4 pt-4 border-t border-odoo-border">
-                           <div className="flex items-center gap-3"><Briefcase size={16} className="text-odoo-teal"/><p className="text-[11px] font-bold text-odoo-dark uppercase">{session?.employee_data?.job_title || 'Colaborador'}</p></div>
-                           <div className="flex items-center gap-3"><MapPin size={16} className="text-odoo-teal"/><p className="text-[11px] font-bold text-odoo-dark uppercase">{session?.employee_data?.department_id?.[1] || 'Sede Local'}</p></div>
+                           <div className="flex items-center gap-3"><Briefcase size={16} className="text-odoo-teal"/><p className="text-[11px] font-bold text-odoo-dark uppercase">{session?.employee_data?.job_title || 'Colaborador San José'}</p></div>
+                           <div className="flex items-center gap-3"><MapPin size={16} className="text-odoo-teal"/><p className="text-[11px] font-bold text-odoo-dark uppercase">{session?.employee_data?.department_id?.[1] || 'Sede Asignada'}</p></div>
                         </div>
                       </div>
                       <div className="lg:col-span-2 bg-odoo-purple/5 p-8 rounded-3xl border border-odoo-purple/10 space-y-6">
-                        <div className="flex justify-between items-center text-[10px] font-black text-odoo-purple uppercase tracking-widest"><span>Jornada Semanal</span> <Clock size={16}/></div>
+                        <div className="flex justify-between items-center text-[10px] font-black text-odoo-purple uppercase tracking-widest"><span>Mi Jornada Semanal</span> <Clock size={16}/></div>
                         <div className="grid grid-cols-7 gap-2">
-                           {['L','M','X','J','V','S','D'].map((d, i) => <div key={i} className={`h-16 rounded-xl flex items-center justify-center font-black ${i < 6 ? 'bg-white border border-odoo-purple/20 text-odoo-dark' : 'bg-rose-50 text-rose-300'}`}>{d}</div>)}
+                           {['L','M','X','J','V','S','D'].map((d, i) => <div key={i} className={`h-16 rounded-xl flex items-center justify-center font-black ${i < 6 ? 'bg-white border border-odoo-purple/20 text-odoo-dark shadow-sm' : 'bg-rose-50 text-rose-300'}`}>{d}</div>)}
                         </div>
-                        <p className="text-[9px] font-bold text-odoo-purple/50 uppercase italic text-center">Horario: {session?.employee_data?.resource_calendar_id?.[1] || '40h Normal'}</p>
+                        <div className="flex items-center justify-center gap-2 mt-4 p-4 bg-white/50 rounded-xl border border-dashed border-odoo-purple/20">
+                           <Info size={14} className="text-odoo-purple"/>
+                           <p className="text-[9px] font-bold text-odoo-purple/70 uppercase italic">Calendario asignado: {session?.employee_data?.resource_calendar_id?.[1] || 'Horario Estándar'}</p>
+                        </div>
                       </div>
                    </div>
                 ) : (
-                   <div className="bg-white p-10 rounded-3xl border border-odoo-border saas-shadow space-y-10">
+                   // VISTA PARA ADMINS Y SUPERADMINS: DIRECTORIO COMPLETO
+                   <div className="bg-white p-10 rounded-3xl border border-odoo-border saas-shadow space-y-10 text-left">
                       <div className="flex justify-between items-end">
                         <div className="space-y-1"><h2 className="text-3xl font-black text-odoo-dark uppercase flex items-center gap-4 italic">Capital Humano <UsersIcon className="text-odoo-purple" size={32}/></h2></div>
-                        <select className="bg-odoo-gray border-2 border-odoo-border p-3.5 rounded-xl text-[10px] font-black uppercase outline-none" value={hrFilterBranch} onChange={e => setHrFilterBranch(e.target.value === 'all' ? 'all' : Number(e.target.value))}>
-                           <option value="all">Sedes</option>
+                        <select className="bg-odoo-gray border-2 border-odoo-border p-3.5 rounded-xl text-[10px] font-black uppercase outline-none focus:border-odoo-purple transition-all" value={hrFilterBranch} onChange={e => setHrFilterBranch(e.target.value === 'all' ? 'all' : Number(e.target.value))}>
+                           <option value="all">Ver Todas las Sedes</option>
                            {Array.from(new Set(employees.filter(e => e.department_id).map(e => JSON.stringify(e.department_id)))).map(d => { const dj = JSON.parse(d as string); return <option key={dj[0]} value={dj[0]}>{dj[1]}</option>; })}
                         </select>
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                         {(hrFilterBranch === 'all' ? employees : employees.filter(e => e.department_id && e.department_id[0] === hrFilterBranch)).map(emp => (
-                           <div key={emp.id} className="bg-white border border-odoo-border rounded-2xl p-6 hover:border-odoo-purple transition-all group">
-                              <div className="w-10 h-10 bg-odoo-gray rounded-xl flex items-center justify-center text-odoo-purple font-black text-[12px] group-hover:bg-odoo-purple group-hover:text-white mb-4 italic transition-all">{emp.name.slice(0,2)}</div>
-                              <h4 className="font-black text-odoo-dark text-xs uppercase mb-1 line-clamp-1">{emp.name}</h4>
-                              <p className="text-[8px] font-bold text-odoo-teal uppercase truncate">{emp.job_title || 'Socio'}</p>
-                              <div className="mt-4 pt-4 border-t border-odoo-border flex justify-between text-[8px] font-black text-odoo-text/30 uppercase"><span>Tel:</span> <span className="text-odoo-purple">{emp.work_phone || '---'}</span></div>
+                           <div key={emp.id} className="bg-white border border-odoo-border rounded-2xl p-6 hover:border-odoo-purple transition-all group relative overflow-hidden">
+                              <div className="absolute top-0 right-0 p-2 bg-emerald-50 text-emerald-500 rounded-bl-xl opacity-0 group-hover:opacity-100 transition-opacity"><UserCheck size={14}/></div>
+                              <div className="w-10 h-10 bg-odoo-gray rounded-xl flex items-center justify-center text-odoo-purple font-black text-[12px] group-hover:bg-odoo-purple group-hover:text-white mb-4 italic transition-all shadow-inner">{emp.name.slice(0,2).toUpperCase()}</div>
+                              <h4 className="font-black text-odoo-dark text-xs uppercase mb-1 line-clamp-1 group-hover:text-odoo-purple transition-colors">{emp.name}</h4>
+                              <p className="text-[8px] font-bold text-odoo-teal uppercase truncate">{emp.job_title || 'Colaborador'}</p>
+                              <div className="mt-4 pt-4 border-t border-odoo-border flex justify-between text-[8px] font-black text-odoo-text/30 uppercase tracking-tighter">
+                                 <span>Contacto:</span> <span className="text-odoo-purple font-bold">{emp.work_phone || '---'}</span>
+                              </div>
                            </div>
                         ))}
                       </div>
@@ -454,17 +470,30 @@ const App: React.FC = () => {
           )}
 
           {activeTab === 'settings' && session?.role === 'superadmin' && (
-             <div className="max-w-2xl mx-auto pt-10 animate-saas">
+             <div className="max-w-2xl mx-auto pt-10 animate-saas text-left">
                <div className="bg-white p-12 rounded-3xl saas-shadow border border-odoo-border space-y-10">
                   <div className="text-center space-y-4">
-                     <div className="w-16 h-16 odoo-gradient text-white rounded-2xl flex items-center justify-center mx-auto shadow-xl"><Database size={32}/></div>
-                     <h2 className="text-2xl font-black text-odoo-dark uppercase italic">Backend SaaS</h2>
+                     <div className="w-16 h-16 odoo-gradient text-white rounded-2xl flex items-center justify-center mx-auto shadow-xl rotate-3"><Database size={32}/></div>
+                     <h2 className="text-2xl font-black text-odoo-dark uppercase italic tracking-tighter leading-none">Configuración SaaS</h2>
+                     <p className="text-[10px] font-bold text-odoo-text/40 uppercase tracking-widest">Acceso exclusivo a Soporte y Dirección</p>
                   </div>
-                  <div className="space-y-4 text-left">
-                    <label className="text-[10px] font-black text-odoo-text uppercase ml-2">Endpoint URL</label>
-                    <input className="w-full bg-odoo-gray border-2 border-transparent px-6 py-4 rounded-2xl text-[12px] font-bold outline-none focus:border-odoo-purple shadow-inner" value={config.url} onChange={e => setConfig({...config, url: e.target.value})} />
+                  <div className="space-y-6 pt-6">
+                    <div className="space-y-2">
+                       <label className="text-[10px] font-black text-odoo-text uppercase ml-2 tracking-widest">Endpoint Odoo URL</label>
+                       <div className="relative">
+                          <Wifi className="absolute left-4 top-1/2 -translate-y-1/2 text-odoo-purple/30" size={18}/>
+                          <input className="w-full bg-odoo-gray border-2 border-transparent px-12 py-4 rounded-2xl text-[12px] font-bold outline-none focus:border-odoo-purple shadow-inner transition-all" value={config.url} onChange={e => setConfig({...config, url: e.target.value})} />
+                       </div>
+                    </div>
+                    <div className="space-y-2">
+                       <label className="text-[10px] font-black text-odoo-text uppercase ml-2 tracking-widest">Base de Datos</label>
+                       <div className="relative">
+                          <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-odoo-purple/30" size={18}/>
+                          <input className="w-full bg-odoo-gray border-2 border-transparent px-12 py-4 rounded-2xl text-[12px] font-bold outline-none focus:border-odoo-purple shadow-inner transition-all" value={config.db} onChange={e => setConfig({...config, db: e.target.value})} />
+                       </div>
+                    </div>
                   </div>
-                  <button onClick={() => { localStorage.setItem('odoo_ops_v18_config', JSON.stringify(config)); alert("Actualizado."); }} className="w-full odoo-gradient text-white py-4 rounded-2xl font-black uppercase text-xs tracking-widest shadow-lg hover:brightness-110 active:scale-95 transition-all">Reconfigurar Servidor</button>
+                  <button onClick={() => { localStorage.setItem('odoo_ops_v18_config', JSON.stringify(config)); alert("Configuración actualizada."); }} className="w-full odoo-gradient text-white py-4 rounded-2xl font-black uppercase text-xs tracking-widest shadow-lg hover:brightness-110 active:scale-95 transition-all">Reconfigurar Servidor</button>
                </div>
              </div>
           )}
@@ -473,15 +502,15 @@ const App: React.FC = () => {
 
       {showProductModal && (
         <div className="fixed inset-0 z-[100] bg-odoo-dark/90 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-2xl rounded-3xl overflow-hidden shadow-2xl animate-saas flex flex-col max-h-[85vh] border border-white/10">
+          <div className="bg-white w-full max-w-2xl rounded-3xl overflow-hidden shadow-2xl animate-saas flex flex-col max-h-[85vh] border border-white/10 text-left">
              <div className="p-8 border-b border-odoo-border flex items-center justify-between bg-odoo-gray/30">
-                <div className="space-y-1"><h3 className="font-black text-odoo-dark uppercase text-xl italic">Maestro de Insumos</h3><p className="text-[9px] font-bold text-odoo-teal uppercase tracking-widest">Odoo Enterprise v19</p></div>
+                <div className="space-y-1"><h3 className="font-black text-odoo-dark uppercase text-xl italic leading-none">Maestro de Insumos</h3><p className="text-[9px] font-bold text-odoo-teal uppercase tracking-widest">Odoo Enterprise v19</p></div>
                 <button onClick={() => setShowProductModal(false)} className="text-odoo-text/30 hover:text-odoo-purple transition-all p-2 rounded-full hover:bg-white"><Plus size={32} className="rotate-45"/></button>
              </div>
              <div className="p-6 bg-white border-b border-odoo-border">
                 <div className="relative"><input type="text" autoFocus className="w-full bg-odoo-gray border-2 border-transparent focus:border-odoo-purple pl-12 pr-6 py-4 rounded-2xl text-[13px] font-bold outline-none shadow-inner" placeholder="Buscar por Nombre o SKU..." value={productSearch} onChange={e => setProductSearch(e.target.value)} /><Search className="absolute left-4 top-1/2 -translate-y-1/2 text-odoo-purple" size={20}/></div>
              </div>
-             <div className="flex-1 overflow-y-auto p-6 pt-0 space-y-3 custom-scrollbar">
+             <div className="flex-1 overflow-y-auto p-6 pt-0 space-y-3 custom-scrollbar bg-odoo-gray/5">
                 {products.filter(p => p.name.toLowerCase().includes(productSearch.toLowerCase()) || (p.default_code && p.default_code.toLowerCase().includes(productSearch.toLowerCase()))).map(p => (
                    <button key={p.id} onClick={() => { 
                       const exists = cart.find(c => c.id === p.id);
@@ -493,10 +522,10 @@ const App: React.FC = () => {
                         <p className="font-black text-odoo-dark text-[11px] uppercase group-hover:text-odoo-purple transition-colors">{p.name}</p>
                         <div className="flex items-center gap-3 text-[8px] font-black uppercase text-odoo-text/40 tracking-widest">
                            <span className="flex items-center gap-2"><Barcode size={12}/> {p.default_code || '---'}</span>
-                           <span className={`px-2 py-0.5 rounded-md ${p.qty_available <= 5 ? 'bg-rose-50 text-rose-500' : 'bg-emerald-50 text-odoo-teal'}`}>Stock: {p.qty_available}</span>
+                           <span className={`px-2 py-0.5 rounded-md border font-bold ${p.qty_available <= 5 ? 'bg-rose-50 text-rose-500 border-rose-100' : 'bg-emerald-50 text-odoo-teal border-emerald-100'}`}>Físico: {p.qty_available}</span>
                         </div>
                      </div>
-                     <div className="bg-odoo-purple text-white p-2.5 rounded-xl opacity-0 group-hover:opacity-100 transition-all scale-75 group-hover:scale-100"><Plus size={18}/></div>
+                     <div className="bg-odoo-purple text-white p-2.5 rounded-xl opacity-0 group-hover:opacity-100 transition-all scale-75 group-hover:scale-100 shadow-lg shadow-odoo-purple/20"><Plus size={18}/></div>
                    </button>
                 ))}
              </div>

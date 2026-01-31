@@ -55,9 +55,9 @@ const parseValue = (node: Element): any => {
 };
 
 const PROXIES = [
-  (u: string) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
-  (u: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-  (u: string) => u,
+  { name: 'CORS Proxy IO', fn: (u: string) => `https://corsproxy.io/?${encodeURIComponent(u)}` },
+  { name: 'AllOrigins', fn: (u: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}` },
+  { name: 'Directo', fn: (u: string) => u }
 ];
 
 export class OdooClient {
@@ -78,17 +78,15 @@ export class OdooClient {
     const baseUrl = `${this.url}/xmlrpc/2/${endpoint}`;
     let lastError: any = null;
 
-    for (const proxyFn of PROXIES) {
+    for (const proxy of PROXIES) {
       const controller = new AbortController();
-      // Aumentamos a 15 segundos para dar margen a respuestas pesadas de Odoo
       const timeoutId = setTimeout(() => controller.abort(), 15000); 
 
       try {
-        const response = await fetch(proxyFn(baseUrl), {
+        const response = await fetch(proxy.fn(baseUrl), {
           method: 'POST',
           headers: { 
-            'Content-Type': 'text/xml',
-            'Accept': 'text/xml'
+            'Content-Type': 'text/xml'
           },
           body: xml,
           mode: 'cors',
@@ -97,20 +95,19 @@ export class OdooClient {
 
         clearTimeout(timeoutId);
 
-        // Si el proxy nos da un 408 o 5xx, saltamos al siguiente rápidamente
         if (response.status === 408 || response.status >= 500) {
-          lastError = new Error(`Servidor ocupado (${response.status}). Buscando alternativa...`);
+          lastError = new Error(`Proxy ${proxy.name} ocupado (${response.status})`);
           continue;
         }
 
         if (!response.ok) {
-          lastError = new Error(`HTTP ${response.status}: Error de comunicación.`);
+          lastError = new Error(`${proxy.name}: HTTP ${response.status}`);
           continue;
         }
 
         const text = await response.text();
         if (!text || !text.includes('methodResponse')) {
-          lastError = new Error("Respuesta no válida del servidor.");
+          lastError = new Error(`Respuesta no válida de ${proxy.name}`);
           continue;
         }
 
@@ -128,19 +125,17 @@ export class OdooClient {
         lastError = e;
         
         if (e.name === 'AbortError') {
-          lastError = new Error("La conexión excedió el tiempo límite. Reintentando...");
+          lastError = new Error(`Timeout en ${proxy.name}. Reintentando con otro...`);
           continue;
         }
-        
-        // Si es un error de Odoo (reglas de negocio), lo lanzamos directamente
+
         if (e.message.includes('Odoo:')) throw e;
         
-        // Otros errores (CORS, red) causan salto al siguiente proxy
-        console.warn(`Proxy fallido: ${e.message}`);
+        console.warn(`Fallo ${proxy.name}: ${e.message}`);
       }
     }
     
-    throw new Error(lastError?.message || 'Error de conexión crítica. Revise el servidor Odoo.');
+    throw new Error(`Error de conexión: ${lastError?.message || 'No se pudo contactar con Odoo desde Vercel.'}. Intente refrescar la página.`);
   }
 
   async authenticate(user: string, apiKey: string): Promise<number | null> {

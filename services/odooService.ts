@@ -55,9 +55,9 @@ const parseValue = (node: Element): any => {
 };
 
 const PROXIES = [
-  (u: string) => u,
   (u: string) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
   (u: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+  (u: string) => u,
 ];
 
 export class OdooClient {
@@ -80,7 +80,8 @@ export class OdooClient {
 
     for (const proxyFn of PROXIES) {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 12000); // 12s timeout para evitar HTTP 408 estancado
+      // Aumentamos a 15 segundos para dar margen a respuestas pesadas de Odoo
+      const timeoutId = setTimeout(() => controller.abort(), 15000); 
 
       try {
         const response = await fetch(proxyFn(baseUrl), {
@@ -96,19 +97,20 @@ export class OdooClient {
 
         clearTimeout(timeoutId);
 
-        if (response.status === 408) {
-          lastError = new Error("Tiempo de espera agotado (Proxy 408). Reintentando...");
+        // Si el proxy nos da un 408 o 5xx, saltamos al siguiente rápidamente
+        if (response.status === 408 || response.status >= 500) {
+          lastError = new Error(`Servidor ocupado (${response.status}). Buscando alternativa...`);
           continue;
         }
 
         if (!response.ok) {
-          lastError = new Error(`Servidor respondió con error HTTP ${response.status}`);
+          lastError = new Error(`HTTP ${response.status}: Error de comunicación.`);
           continue;
         }
 
         const text = await response.text();
         if (!text || !text.includes('methodResponse')) {
-          lastError = new Error("Respuesta XML inválida");
+          lastError = new Error("Respuesta no válida del servidor.");
           continue;
         }
 
@@ -116,7 +118,7 @@ export class OdooClient {
         const fault = doc.querySelector('fault value');
         if (fault) {
           const faultData = parseValue(fault);
-          throw new Error(`Error Odoo: ${faultData.faultString || 'Error desconocido'}`);
+          throw new Error(`Odoo: ${faultData.faultString || 'Error interno'}`);
         }
 
         const resultNode = doc.querySelector('params param value');
@@ -124,32 +126,35 @@ export class OdooClient {
       } catch (e: any) {
         clearTimeout(timeoutId);
         lastError = e;
+        
         if (e.name === 'AbortError') {
-          lastError = new Error("La conexión tardó demasiado (Timeout)");
+          lastError = new Error("La conexión excedió el tiempo límite. Reintentando...");
           continue;
         }
-        if (e.message.includes('Odoo')) throw e;
+        
+        // Si es un error de Odoo (reglas de negocio), lo lanzamos directamente
+        if (e.message.includes('Odoo:')) throw e;
+        
+        // Otros errores (CORS, red) causan salto al siguiente proxy
+        console.warn(`Proxy fallido: ${e.message}`);
       }
     }
-    throw new Error(lastError?.message || 'Fallo de conexión. Verifique la URL de Odoo o su conexión a internet.');
+    
+    throw new Error(lastError?.message || 'Error de conexión crítica. Revise el servidor Odoo.');
   }
 
   async authenticate(user: string, apiKey: string): Promise<number | null> {
-    try {
-      const uid = await this.rpcCall('common', 'authenticate', [this.db, user, apiKey, {}]);
-      if (typeof uid === 'number') {
-        this.uid = uid;
-        this.apiKey = apiKey;
-        return uid;
-      }
-      return null;
-    } catch (e: any) {
-      throw e;
+    const uid = await this.rpcCall('common', 'authenticate', [this.db, user, apiKey, {}]);
+    if (typeof uid === 'number') {
+      this.uid = uid;
+      this.apiKey = apiKey;
+      return uid;
     }
+    return null;
   }
 
   async searchRead(model: string, domain: any[], fields: string[], options: any = {}) {
-    if (!this.uid || !this.apiKey) throw new Error("Sesión no iniciada");
+    if (!this.uid || !this.apiKey) throw new Error("Inicie sesión");
     return await this.rpcCall('object', 'execute_kw', [
       this.db, this.uid, this.apiKey,
       model, 'search_read',
@@ -164,7 +169,7 @@ export class OdooClient {
   }
 
   async create(model: string, values: any, context: any = {}) {
-    if (!this.uid || !this.apiKey) throw new Error("Sesión no iniciada");
+    if (!this.uid || !this.apiKey) throw new Error("Inicie sesión");
     return await this.rpcCall('object', 'execute_kw', [
       this.db, this.uid, this.apiKey,
       model, 'create',

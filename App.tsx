@@ -52,7 +52,6 @@ const App: React.FC = () => {
   const [selectedPosConfig, setSelectedPosConfig] = useState<any>(null);
   const [selectedSessionId, setSelectedSessionId] = useState<number | null>(null);
   
-  // Usar fecha local para evitar problemas de UTC en el filtro inicial
   const getLocalDate = () => {
     const d = new Date();
     d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
@@ -78,8 +77,8 @@ const App: React.FC = () => {
     const dateEnd = end || reportDateEnd;
 
     try {
-      // 1. Obtener Configuraciones de POS con su ID de sesión actual (estado real de Odoo)
-      const allConfigs = await client.searchRead('pos.config', [], ['name', 'id', 'current_session_id', 'current_session_state']);
+      // 1. Obtener Configuraciones de POS
+      const allConfigs = await client.searchRead('pos.config', [], ['name', 'id', 'current_session_id']);
       const filteredConfigs = allConfigs.filter((c: any) => {
         const name = c.name.toUpperCase();
         return (name.includes('BOTICA 1') || name.includes('BOTICA 2') || name.includes('BOTICA 3') || name.includes('BOTICA 4') || name.includes('BOTICA 0') || name.includes('BOTICA B')) &&
@@ -88,19 +87,15 @@ const App: React.FC = () => {
       setPosConfigs(filteredConfigs);
       const configIds = filteredConfigs.map((c: any) => c.id);
 
-      // 2. Obtener sesiones cerradas en el periodo + las sesiones abiertas actuales
-      const activeSessionIds = filteredConfigs
-        .map(c => c.current_session_id ? c.current_session_id[0] : null)
-        .filter(id => id !== null);
-
-      const periodSessions = await client.searchRead('pos.session', 
-        ['|', ['id', 'in', activeSessionIds], '&', ['config_id', 'in', configIds], '&', ['start_at', '>=', dateStart + ' 00:00:00'], ['start_at', '<=', dateEnd + ' 23:59:59']], 
+      // 2. Buscar sesiones que están ABIERTAS ahora O que iniciaron en el periodo
+      const sessions = await client.searchRead('pos.session', 
+        ['&', ['config_id', 'in', configIds], '|', ['state', 'not in', ['closed', 'closing_control']], '&', ['start_at', '>=', dateStart + ' 00:00:00'], ['start_at', '<=', dateEnd + ' 23:59:59']], 
         ['id', 'config_id', 'user_id', 'start_at', 'stop_at', 'cash_register_balance_start', 'cash_register_balance_end_real', 'state'],
         { order: 'id desc' }
       );
-      const allSessionIds = periodSessions.map(s => s.id);
+      const allSessionIds = sessions.map(s => s.id);
 
-      // 3. Obtener Pedidos vinculados a todas estas sesiones
+      // 3. Obtener Pedidos vinculados a esas sesiones
       let orders: any[] = [];
       if (allSessionIds.length > 0) {
         orders = await client.searchRead('pos.order', 
@@ -134,11 +129,8 @@ const App: React.FC = () => {
 
       const stats: any = {};
       for (const config of filteredConfigs) {
-        // Determinar si está abierta según la configuración del POS (más fiable)
-        const isOnline = config.current_session_state === 'opened' || config.current_session_state === 'opening_control';
-        const currentSessionId = config.current_session_id ? config.current_session_id[0] : null;
-        
-        const configSessions = periodSessions.filter(s => s.config_id[0] === config.id);
+        const configSessions = sessions.filter(s => s.config_id[0] === config.id);
+        const activeSession = configSessions.find(s => s.state === 'opened' || s.state === 'opening_control');
         const latestSession = configSessions[0];
 
         const processedSessions = configSessions.map(sess => {
@@ -192,16 +184,15 @@ const App: React.FC = () => {
           };
         });
 
-        // Filtrar órdenes que pertenezcan a las sesiones del periodo para esta config
-        const relevantConfigSessionIds = configSessions.map(s => s.id);
-        const configPeriodOrders = orders.filter(o => relevantConfigSessionIds.includes(o.session_id[0]));
+        // Venta total del periodo para esta config
+        const configPeriodOrders = orders.filter(o => o.config_id[0] === config.id);
 
         stats[config.id] = {
           day_total: configPeriodOrders.reduce((a, b) => a + b.amount_total, 0),
           day_order_count: configPeriodOrders.length,
-          isOpened: isOnline,
-          openedBy: isOnline && latestSession ? latestSession.user_id[1] : '---',
-          cashBalance: latestSession?.cash_register_balance_end_real || 0,
+          isOpened: !!activeSession,
+          openedBy: activeSession ? activeSession.user_id[1] : '---',
+          cashBalance: activeSession ? (activeSession.cash_register_balance_end_real || 0) : (latestSession?.cash_register_balance_end_real || 0),
           sessions: processedSessions
         };
       }
@@ -504,7 +495,7 @@ const App: React.FC = () => {
                                  <button key={s.id} onClick={() => setSelectedSessionId(s.id)} className={`w-full p-4 rounded-2xl border text-left transition-all ${activeSession?.id === s.id ? 'bg-odoo-primary text-white border-odoo-primary shadow-lg' : 'bg-gray-50 border-transparent hover:bg-gray-100'}`}>
                                     <div className="flex justify-between items-start mb-2">
                                        <p className="text-[10px] font-black uppercase tracking-widest">Sesión #{s.id}</p>
-                                       <span className={`text-[8px] font-black px-2 py-1 rounded-lg uppercase ${s.state === 'opened' ? 'bg-green-500 text-white animate-pulse' : 'bg-gray-300 text-gray-600'}`}>{s.state === 'opened' ? 'ABIERTA' : 'CERRADA'}</span>
+                                       <span className={`text-[8px] font-black px-2 py-1 rounded-lg uppercase ${s.state === 'opened' || s.state === 'opening_control' ? 'bg-green-500 text-white animate-pulse' : 'bg-gray-300 text-gray-600'}`}>{s.state === 'opened' || s.state === 'opening_control' ? 'ABIERTA' : 'CERRADA'}</span>
                                     </div>
                                     <p className="text-xs font-black truncate">{s.user_id[1]}</p>
                                     <div className="flex justify-between items-end mt-3">

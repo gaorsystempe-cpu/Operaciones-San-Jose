@@ -61,15 +61,19 @@ const App: React.FC = () => {
     if (!canSeeAdminTabs) return;
     setLoading(true);
     try {
-      // 1. Obtener Cajas (Filtrado por las sedes solicitadas)
-      const configs = await client.searchRead('pos.config', [], ['name', 'current_session_id', 'id']);
-      setPosConfigs(configs);
+      // 1. Obtener Cajas y filtrar las excluidas (Tienda, BOTICA CRUZ, P&P FARMA)
+      const allConfigs = await client.searchRead('pos.config', [], ['name', 'current_session_id', 'id']);
+      const filteredConfigs = allConfigs.filter((c: any) => {
+        const name = c.name.toUpperCase();
+        return !name.includes('TIENDA') && !name.includes('CRUZ') && !name.includes('P&P');
+      });
+      setPosConfigs(filteredConfigs);
 
-      // 2. Obtener sesiones activas para balances
-      const sessionIds = configs.filter(c => c.current_session_id).map(c => c.current_session_id[0]);
+      // 2. Obtener sesiones detalladas para verificar estados REALES
+      const sessionIds = filteredConfigs.filter((c: any) => c.current_session_id).map((c: any) => c.current_session_id[0]);
       let activeSessions: any[] = [];
       if (sessionIds.length > 0) {
-        activeSessions = await client.searchRead('pos.session', [['id', 'in', sessionIds]], ['id', 'user_id', 'start_at', 'cash_register_balance_end_real', 'state']);
+        activeSessions = await client.searchRead('pos.session', [['id', 'in', sessionIds]], ['id', 'user_id', 'start_at', 'stop_at', 'cash_register_balance_end_real', 'state']);
       }
 
       // 3. Obtener pedidos de hoy
@@ -89,7 +93,7 @@ const App: React.FC = () => {
 
       // Procesar Estadísticas
       const stats: any = {};
-      for (const config of configs) {
+      for (const config of filteredConfigs) {
         const sess = activeSessions.find(s => s.id === (config.current_session_id?.[0]));
         const configOrders = orders.filter(o => o.config_id[0] === config.id);
         const configPayments = payments.filter(p => configOrders.some(o => o.id === p.pos_order_id[0]));
@@ -103,10 +107,11 @@ const App: React.FC = () => {
         stats[config.id] = {
           total: configOrders.reduce((a, b) => a + b.amount_total, 0),
           orderCount: configOrders.length,
-          openedBy: sess?.user_id?.[1] || 'Cerrada',
+          openedBy: sess?.user_id?.[1] || '---',
+          isOpened: sess?.state === 'opened',
           cashBalance: sess?.cash_register_balance_end_real || 0,
           payments: paymentBreakdown,
-          lastClosing: sess?.stop_at || '---'
+          lastClosing: sess?.stop_at ? new Date(sess.stop_at).toLocaleDateString() : '---'
         };
       }
       setPosSalesData(stats);
@@ -410,12 +415,11 @@ const App: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                    <div className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm">
                       <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Venta Global Hoy</p>
-                      {/* Fixed: Property 'toFixed' does not exist on type 'unknown' on line 425. Using Number() for safety. */}
                       <p className="text-2xl font-black text-gray-800">S/ {Number(Object.values(posSalesData).reduce((a: any, b: any) => a + (b.total || 0), 0)).toFixed(2)}</p>
                    </div>
                    <div className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm">
                       <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Cajas Activas</p>
-                      <p className="text-2xl font-black text-odoo-success">{posConfigs.filter(c => c.current_session_id).length} / {posConfigs.length}</p>
+                      <p className="text-2xl font-black text-odoo-success">{posConfigs.filter(c => posSalesData[c.id]?.isOpened).length} / {posConfigs.length}</p>
                    </div>
                    <div className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm">
                       <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Tickets Emitidos</p>
@@ -423,7 +427,6 @@ const App: React.FC = () => {
                    </div>
                    <div className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm">
                       <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Balance Efectivo</p>
-                      {/* Using Number() to prevent 'unknown' errors with toFixed. */}
                       <p className="text-2xl font-black text-amber-500">S/ {Number(Object.values(posSalesData).reduce((a: number, b: any) => a + (b.cashBalance || 0), 0)).toFixed(2)}</p>
                    </div>
                 </div>
@@ -432,12 +435,12 @@ const App: React.FC = () => {
                   {/* Grid de Sedes */}
                   <div className="lg:col-span-2 space-y-6">
                     <h3 className="text-sm font-black text-gray-800 uppercase tracking-widest flex items-center gap-3">
-                      <LayoutGrid size={20} className="text-odoo-primary"/> MONITOREO DE BOTICAS
+                      <LayoutGrid size={20} className="text-odoo-primary"/> MONITOREO DE BOTICAS SJS
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                       {posConfigs.map(config => {
                         const sales = posSalesData[config.id] || {};
-                        const isOnline = !!config.current_session_id;
+                        const isOnline = sales.isOpened;
                         return (
                           <button key={config.id} onClick={() => setSelectedPosDetail(config)} className={`bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm transition-all text-left hover:scale-[1.02] active:scale-95 group ${selectedPosDetail?.id === config.id ? 'ring-4 ring-odoo-primary/10 border-odoo-primary' : ''}`}>
                             <div className="flex justify-between items-start mb-6">
@@ -446,33 +449,27 @@ const App: React.FC = () => {
                                   <h4 className="font-black text-gray-800 uppercase text-sm tracking-tight">{config.name}</h4>
                                </div>
                                <span className={`text-[9px] font-black px-3 py-1.5 rounded-xl uppercase tracking-widest ${isOnline ? 'bg-green-50 text-green-600' : 'bg-gray-50 text-gray-400'}`}>
-                                 {isOnline ? 'En Línea' : 'Cerrada'}
+                                 {isOnline ? 'Abierta' : 'Cerrada'}
                                </span>
                             </div>
                             
                             <div className="space-y-4">
                                <div className="flex justify-between items-center">
                                   <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Responsable</p>
-                                  <p className="text-xs font-black text-gray-700">{sales.openedBy || 'S/D'}</p>
+                                  <p className="text-xs font-black text-gray-700 truncate max-w-[120px]">{sales.openedBy || '---'}</p>
                                </div>
                                <div className="flex justify-between items-center">
                                   <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Balance Efectivo</p>
-                                  {/* Using Number() to prevent 'unknown' errors with toFixed. */}
                                   <p className="text-sm font-black text-amber-500">S/ {Number(sales.cashBalance || 0).toFixed(2)}</p>
                                </div>
                                <div className="flex justify-between items-center pt-4 border-t border-gray-50">
                                   <p className="text-[10px] font-black text-odoo-primary uppercase tracking-widest">Venta del Día</p>
-                                  {/* Using Number() to prevent 'unknown' errors with toFixed. */}
                                   <p className="text-lg font-black text-gray-800">S/ {Number(sales.total || 0).toFixed(2)}</p>
                                </div>
                             </div>
 
                             <div className="mt-6 flex items-center justify-between">
-                               <div className="flex gap-1.5">
-                                  {Object.keys(sales.payments || {}).map((m, i) => (
-                                    <div key={i} className="w-2 h-2 rounded-full bg-odoo-primary/20" title={m}></div>
-                                  ))}
-                               </div>
+                               <p className="text-[9px] font-bold text-gray-300 uppercase tracking-widest">Cierre: {sales.lastClosing}</p>
                                <ChevronRight size={18} className="text-gray-300 group-hover:text-odoo-primary transition-colors"/>
                             </div>
                           </button>
@@ -488,7 +485,7 @@ const App: React.FC = () => {
                        <div className="bg-white p-8 rounded-[3rem] border border-gray-100 shadow-xl o-animate-fade relative overflow-hidden">
                           <div className="absolute top-0 right-0 w-32 h-32 bg-odoo-primary/5 rounded-full -mr-16 -mt-16"></div>
                           <h3 className="text-sm font-black text-gray-800 uppercase tracking-widest mb-6 flex items-center gap-2">
-                             <PieChart size={20} className="text-odoo-primary"/> CIERRE DE CAJA
+                             <PieChart size={20} className="text-odoo-primary"/> ANALÍTICA DE SEDE
                           </h3>
                           <div className="space-y-6">
                              <div className="p-4 bg-gray-50 rounded-2xl">
@@ -496,14 +493,13 @@ const App: React.FC = () => {
                                 <p className="text-sm font-black text-odoo-primary uppercase">{selectedPosDetail.name}</p>
                              </div>
                              <div className="space-y-3">
-                                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Desglose de Pagos</p>
+                                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Desglose de Pagos Hoy</p>
                                 {Object.entries(posSalesData[selectedPosDetail.id]?.payments || {}).map(([method, amount]: [string, any]) => (
                                   <div key={method} className="flex justify-between items-center group">
                                      <div className="flex items-center gap-3">
                                         {method.toLowerCase().includes('efectivo') ? <Banknote size={16} className="text-green-500"/> : method.toLowerCase().includes('tarjeta') ? <CreditCard size={16} className="text-blue-500"/> : <Wallet size={16} className="text-purple-500"/>}
                                         <span className="text-[11px] font-bold text-gray-600 group-hover:text-gray-900">{method}</span>
                                      </div>
-                                     {/* Using Number() to prevent 'unknown' errors with toFixed. */}
                                      <span className="text-[11px] font-black text-gray-800">S/ {Number(amount).toFixed(2)}</span>
                                   </div>
                                 ))}
@@ -511,16 +507,19 @@ const App: React.FC = () => {
                                   <p className="text-center py-4 text-[10px] font-black text-gray-300 uppercase italic">Sin transacciones hoy</p>
                                 )}
                              </div>
-                             <div className="pt-6 border-t border-gray-50">
-                                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Última Fecha de Cierre</p>
-                                <p className="text-xs font-black text-gray-600">{posSalesData[selectedPosDetail.id]?.lastClosing}</p>
+                             <div className="pt-6 border-t border-gray-50 flex items-center justify-between">
+                                <div>
+                                   <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Tickets Hoy</p>
+                                   <p className="text-sm font-black text-gray-700">{posSalesData[selectedPosDetail.id]?.orderCount}</p>
+                                </div>
+                                <Activity size={20} className={posSalesData[selectedPosDetail.id]?.isOpened ? 'text-odoo-success' : 'text-gray-200'}/>
                              </div>
                           </div>
                        </div>
                      ) : (
                        <div className="bg-gray-100/50 p-12 rounded-[3rem] border border-dashed border-gray-200 text-center space-y-4">
                           <Filter size={40} className="mx-auto text-gray-300"/>
-                          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Seleccione una botica para ver el desglose detallado</p>
+                          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Seleccione una botica para auditar sus pagos</p>
                        </div>
                      )}
 
@@ -539,7 +538,6 @@ const App: React.FC = () => {
                                       <p className="text-[9px] font-bold text-white/40 uppercase tracking-widest">{item.qty} vendidas</p>
                                    </div>
                                 </div>
-                                {/* Using Number() to prevent 'unknown' errors with toFixed. */}
                                 <p className="text-[11px] font-black text-odoo-success">S/ {Number(item.total).toFixed(2)}</p>
                              </div>
                            ))}

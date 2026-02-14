@@ -97,16 +97,17 @@ const App: React.FC = () => {
     setLoading(true);
     setErrorLog(null);
     try {
-      // Simplificamos el dominio para evitar errores SQL de Odoo con campos calculados
+      // Cambio crítico: Se reemplaza 'detailed_type' por 'type' para evitar el error ValueError de Odoo
       const pData = await client.searchRead(
         'product.product', 
         [
           ['active', '=', true],
-          ['sale_ok', '=', true]
+          ['sale_ok', '=', true],
+          ['type', '=', 'product'] // Solo productos almacenables
         ], 
-        ['name', 'default_code', 'qty_available', 'uom_id', 'detailed_type'], 
+        ['name', 'default_code', 'qty_available', 'uom_id', 'type'], 
         { 
-          limit: 350,
+          limit: 800, // Aumentamos límite para buscar más medicamentos
           context: { 
             location: principal1.lot_stock_id[0], 
             compute_child_locations: false 
@@ -114,16 +115,15 @@ const App: React.FC = () => {
         }
       );
       
-      // Filtrar productos que realmente tengan stock para que la lista no sea infinita
-      // y coincida con lo que el usuario espera ver de la Central
+      // Filtramos en el cliente los que tienen stock real > 0 en la ubicación PR/Stock
       const availableProducts = pData.filter((p: any) => p.qty_available > 0);
       setProducts(availableProducts);
       
       if (availableProducts.length === 0) {
-        setErrorLog("No se detectó stock disponible en " + principal1.lot_stock_id[1]);
+        setErrorLog("No se detectó stock disponible en la ubicación de la Central (" + principal1.lot_stock_id[1] + ")");
       }
     } catch (e: any) {
-      setErrorLog("Error al consultar stock: " + e.message);
+      setErrorLog("Fallo de sincronización: " + e.message);
     } finally {
       setLoading(false);
     }
@@ -277,12 +277,12 @@ const App: React.FC = () => {
             <div className="flex flex-col">
               <div className="flex items-center text-[10px] font-black text-gray-300 gap-3 uppercase tracking-widest">
                 <span>CONSULTA REAL: {principal1?.lot_stock_id?.[1] || '---'}</span> <ChevronRight size={12}/> 
-                <span className="text-odoo-primary">STOCK ACTUALIZADO</span>
+                <span className="text-odoo-primary">SJS ONLINE</span>
               </div>
               <h2 className="text-2xl font-black text-gray-800 uppercase">{activeTab === 'purchase' ? 'Nuevo Pedido' : 'HUB SAN JOSÉ'}</h2>
             </div>
             <div className="flex items-center gap-4">
-              <button onClick={() => { loadAppData(session.id, session.company_id); if(showProductModal) fetchProductsWithCentralStock(); }} className="o-btn-secondary flex items-center gap-2 border-gray-100 font-black text-[10px]"><RefreshCw size={16} className={loading ? 'animate-spin' : ''}/> REFRESCAR SISTEMA</button>
+              <button onClick={() => { loadAppData(session.id, session.company_id); if(showProductModal) fetchProductsWithCentralStock(); }} className="o-btn-secondary flex items-center gap-2 border-gray-100 font-black text-[10px]"><RefreshCw size={16} className={loading ? 'animate-spin' : ''}/> ACTUALIZAR</button>
               {activeTab === 'purchase' && (
                 <button onClick={submitToOdoo} disabled={loading || cart.length === 0 || !selectedWarehouseId} className="o-btn-primary flex items-center gap-2 px-8 font-black text-[10px] shadow-xl shadow-odoo-primary/20">
                   {loading ? <Loader2 className="animate-spin" size={18}/> : <><Send size={18}/> ENVIAR SOLICITUD</>}
@@ -312,7 +312,7 @@ const App: React.FC = () => {
                   <div className="bg-white rounded-[2.5rem] border border-gray-100 p-20 text-center space-y-6">
                      <div className="w-24 h-24 bg-odoo-primary/5 text-odoo-primary rounded-full flex items-center justify-center mx-auto"><MoveHorizontal size={48}/></div>
                      <h3 className="text-xl font-black text-gray-800 uppercase tracking-widest">SISTEMA DE ABASTECIMIENTO SJS</h3>
-                     <p className="text-sm text-gray-400 max-w-md mx-auto font-medium">Consulte el stock real de <b>PR/Stock</b> antes de generar su pedido.</p>
+                     <p className="text-sm text-gray-400 max-w-md mx-auto font-medium">Consulte el stock real de <b>PR/Stock</b> antes de generar su pedido. Los datos se obtienen directamente de Odoo.</p>
                   </div>
                </div>
             )}
@@ -379,7 +379,7 @@ const App: React.FC = () => {
                 <div className="w-24 h-24 bg-green-50 text-odoo-success rounded-[2.5rem] flex items-center justify-center shadow-xl border border-green-100"><Check size={48} strokeWidth={3}/></div>
                 <div className="text-center space-y-3">
                   <h2 className="text-4xl font-black text-gray-800 tracking-tight uppercase">¡PEDIDO REGISTRADO!</h2>
-                  <p className="text-gray-400 font-bold text-sm max-w-sm mx-auto text-center">Solicitud enviada exitosamente a PRINCIPAL1.</p>
+                  <p className="text-gray-400 font-bold text-sm max-w-sm mx-auto text-center">Solicitud enviada exitosamente a la Sede Central (PR).</p>
                 </div>
                 <button onClick={() => setOrderComplete(false)} className="o-btn-primary px-12 py-4 rounded-2xl shadow-xl font-black text-xs">NUEVA SOLICITUD</button>
               </div>
@@ -396,7 +396,7 @@ const App: React.FC = () => {
                   <div className="p-3 bg-odoo-primary/10 rounded-2xl text-odoo-primary"><Package size={28}/></div>
                   <div>
                     <h3 className="font-black text-xl text-gray-800 uppercase">CATÁLOGO CENTRAL SJS</h3>
-                    <p className="text-[10px] font-black text-odoo-primary uppercase tracking-widest mt-0.5">FILTRANDO UBICACIÓN: {principal1?.lot_stock_id?.[1]}</p>
+                    <p className="text-[10px] font-black text-odoo-primary uppercase tracking-widest mt-0.5">SINCRONIZANDO UBICACIÓN: {principal1?.lot_stock_id?.[1]}</p>
                   </div>
                </div>
               <button onClick={() => setShowProductModal(false)} className="bg-white p-3 rounded-2xl text-gray-300 hover:text-rose-500 shadow-sm transition-all"><X size={24}/></button>
@@ -406,10 +406,10 @@ const App: React.FC = () => {
                 <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-300" size={20}/>
                 <input autoFocus type="text" className="w-full pl-14 pr-6 py-4.5 bg-gray-50 rounded-2xl focus:ring-4 focus:ring-odoo-primary/5 outline-none text-sm font-black" placeholder="BUSCAR MEDICAMENTO..." value={productSearch} onChange={e => setProductSearch(e.target.value)} />
               </div>
-              {errorLog && <div className="mt-4 p-3 bg-amber-50 text-amber-600 rounded-xl text-[10px] font-black flex items-center gap-2"><Info size={14}/> {errorLog}</div>}
+              {errorLog && <div className="mt-4 p-3 bg-amber-50 text-amber-600 rounded-xl text-[10px] font-black flex items-center gap-2 leading-tight"><AlertTriangle size={14}/> {errorLog}</div>}
             </div>
             <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
-              {loading && <div className="flex flex-col items-center justify-center py-20 gap-4"><Loader2 className="animate-spin text-odoo-primary" size={40}/><span className="text-[10px] font-black text-gray-400 uppercase">Sincronizando con Odoo...</span></div>}
+              {loading && <div className="flex flex-col items-center justify-center py-20 gap-4"><Loader2 className="animate-spin text-odoo-primary" size={40}/><span className="text-[10px] font-black text-gray-400 uppercase">Sincronizando Stock con Odoo...</span></div>}
               <div className="space-y-2">
                 {products.filter(p => (p.name + (p.default_code || '')).toLowerCase().includes(productSearch.toLowerCase())).map(p => (
                   <button key={p.id} onClick={() => {
@@ -420,11 +420,11 @@ const App: React.FC = () => {
                   }} className="w-full flex items-center justify-between p-6 bg-white hover:bg-odoo-primary/5 rounded-[2rem] border border-transparent hover:border-odoo-primary/10 transition-all text-left group">
                     <div className="max-w-[70%]">
                       <p className="font-black text-sm text-gray-800 group-hover:text-odoo-primary uppercase leading-tight">{p.name}</p>
-                      <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest mt-1">REF: {p.default_code || 'S/REF'}</p>
+                      <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest mt-1">REF: {p.default_code || 'S/REF'} | ODOO-ID: {p.id}</p>
                     </div>
                     <div className="flex items-center gap-6">
                        <div className="text-right">
-                          <p className="text-[9px] font-black text-gray-300 uppercase mb-0.5">STOCK REAL PR</p>
+                          <p className="text-[9px] font-black text-gray-300 uppercase mb-0.5">EN STOCK PR</p>
                           <p className={`text-base font-black ${p.qty_available > 0 ? 'text-odoo-success' : 'text-rose-500'}`}>{Math.floor(p.qty_available)}</p>
                        </div>
                        <div className="p-2.5 bg-odoo-primary/5 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity"><Plus size={20} className="text-odoo-primary"/></div>
@@ -432,7 +432,7 @@ const App: React.FC = () => {
                   </button>
                 ))}
                 {!loading && products.length === 0 && !errorLog && (
-                   <div className="py-20 text-center opacity-40"><p className="text-xs font-black uppercase tracking-widest">No hay stock disponible en esta ubicación.</p></div>
+                   <div className="py-20 text-center opacity-40"><p className="text-xs font-black uppercase tracking-widest">No hay stock registrado en esta ubicación.</p></div>
                 )}
               </div>
             </div>

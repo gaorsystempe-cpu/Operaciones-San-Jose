@@ -71,7 +71,7 @@ const App: React.FC = () => {
     const dateEnd = end || reportDateEnd;
 
     try {
-      // 1. Obtener Configuraciones de POS
+      // 1. Obtener Configuraciones de POS habilitadas
       const allConfigs = await client.searchRead('pos.config', [], ['name', 'id']);
       const filteredConfigs = allConfigs.filter((c: any) => {
         const name = c.name.toUpperCase();
@@ -81,35 +81,45 @@ const App: React.FC = () => {
       setPosConfigs(filteredConfigs);
       const configIds = filteredConfigs.map((c: any) => c.id);
 
-      // 2. Obtener Sesiones: ABIERTAS (en cualquier fecha) O Cerradas en el rango
-      const sessions = await client.searchRead('pos.session', 
-        ['&', ['config_id', 'in', configIds], '|', ['state', 'not in', ['closed', 'closing_control']], '&', ['start_at', '>=', dateStart + ' 00:00:00'], ['start_at', '<=', dateEnd + ' 23:59:59']], 
+      // 2. OBTENER ESTADO REAL: Sesiones abiertas actualmente (sin importar fecha)
+      const openSessions = await client.searchRead('pos.session', 
+        [['config_id', 'in', configIds], ['state', '=', 'opened']], 
+        ['id', 'config_id', 'user_id', 'start_at', 'state']
+      );
+
+      // 3. OBTENER TURNOS DEL PERIODO: Sesiones en el rango de fechas
+      const periodSessions = await client.searchRead('pos.session', 
+        [['config_id', 'in', configIds], ['start_at', '>=', dateStart + ' 00:00:00'], ['start_at', '<=', dateEnd + ' 23:59:59']], 
         ['id', 'config_id', 'user_id', 'start_at', 'stop_at', 'cash_register_balance_start', 'cash_register_balance_end_real', 'state'],
         { order: 'id desc' }
       );
-      const sessionIds = sessions.map(s => s.id);
 
-      // 3. Obtener Pedidos vinculados EXCLUSIVAMENTE a esas sesiones (Garantiza sincronía con Odoo)
-      let orders: any[] = [];
-      if (sessionIds.length > 0) {
-        orders = await client.searchRead('pos.order', 
-          [['session_id', 'in', sessionIds]], 
-          ['amount_total', 'session_id', 'config_id', 'payment_ids', 'user_id', 'date_order'],
-          { limit: 3000 }
-        );
-      }
+      // Combinar para tener una lista única de sesiones relevantes
+      const allRelevantSessions = [...periodSessions];
+      openSessions.forEach(os => {
+        if (!allRelevantSessions.find(s => s.id === os.id)) allRelevantSessions.push(os);
+      });
+      const sessionIds = allRelevantSessions.map(s => s.id);
 
-      const paymentIds = orders.flatMap(o => o.payment_ids);
+      // 4. OBTENER PEDIDOS: Por rango de fecha directo (Garantiza que salgan datos)
+      const orders = await client.searchRead('pos.order', 
+        [['config_id', 'in', configIds], ['date_order', '>=', dateStart + ' 00:00:00'], ['date_order', '<=', dateEnd + ' 23:59:59']], 
+        ['amount_total', 'session_id', 'config_id', 'payment_ids', 'user_id', 'date_order'],
+        { limit: 3000 }
+      );
+
+      // 5. Pagos y Líneas (solo si hay pedidos)
       let payments: any[] = [];
-      if (paymentIds.length > 0) {
-        payments = await client.searchRead('pos.payment', [['id', 'in', paymentIds]], ['amount', 'payment_method_id', 'pos_order_id', 'session_id']);
-      }
-
-      // 4. Obtener Líneas de Pedido para análisis de rentabilidad
       let orderLines: any[] = [];
-      if (sessionIds.length > 0) {
+      if (orders.length > 0) {
+        const paymentIds = orders.flatMap(o => o.payment_ids);
+        if (paymentIds.length > 0) {
+          payments = await client.searchRead('pos.payment', [['id', 'in', paymentIds]], ['amount', 'payment_method_id', 'pos_order_id', 'session_id']);
+        }
+        
+        // Traer líneas de los pedidos del periodo para rentabilidad
         orderLines = await client.searchRead('pos.order.line', 
-          [['session_id', 'in', sessionIds]], 
+          [['order_id', 'in', orders.map(o => o.id)]], 
           ['product_id', 'qty', 'price_subtotal_incl', 'price_subtotal', 'order_id', 'session_id'],
           { limit: 8000 }
         );
@@ -124,38 +134,33 @@ const App: React.FC = () => {
 
       const stats: any = {};
       for (const config of filteredConfigs) {
-        const configSessions = sessions.filter(s => s.config_id[0] === config.id);
+        const configOrders = orders.filter(o => o.config_id[0] === config.id);
+        const configOpenSession = openSessions.find(s => s.config_id[0] === config.id);
+        const configPeriodSessions = periodSessions.filter(s => s.config_id[0] === config.id);
         
-        // Identificar si tiene una sesión activa (Opened)
-        const activeSession = configSessions.find(s => s.state === 'opened' || s.state === 'opening_control');
-        const latestSession = configSessions[0];
-        
-        const processedSessions = configSessions.map(sess => {
-          const sessionOrders = orders.filter(o => o.session_id[0] === sess.id);
-          const sessionPayments = payments.filter(p => p.session_id[0] === sess.id);
-          const sessionLines = orderLines.filter(l => l.session_id[0] === sess.id);
+        const processedSessions = configPeriodSessions.map(sess => {
+          const sOrders = orders.filter(o => o.session_id[0] === sess.id);
+          const sPayments = payments.filter(p => p.session_id[0] === sess.id);
+          const sLines = orderLines.filter(l => l.session_id[0] === sess.id);
           
           const payBreakdown: any = {};
-          sessionPayments.forEach(p => {
+          sPayments.forEach(p => {
             const method = p.payment_method_id[1];
             payBreakdown[method] = (payBreakdown[method] || 0) + p.amount;
           });
 
           const userBreakdown: any = {};
-          sessionOrders.forEach(o => {
+          sOrders.forEach(o => {
             const userName = o.user_id[1];
             userBreakdown[userName] = (userBreakdown[userName] || 0) + o.amount_total;
           });
 
           const productAnalysis: any[] = [];
           const productGroups: Record<string, any> = {};
-
-          sessionLines.forEach(l => {
+          sLines.forEach(l => {
             const pid = l.product_id[0];
             const pName = l.product_id[1];
-            if (!productGroups[pName]) {
-              productGroups[pName] = { name: pName, qty: 0, sale: 0, cost: productCosts[pid] || 0 };
-            }
+            if (!productGroups[pName]) productGroups[pName] = { name: pName, qty: 0, sale: 0, cost: productCosts[pid] || 0 };
             productGroups[pName].qty += l.qty;
             productGroups[pName].sale += l.price_subtotal_incl;
           });
@@ -176,39 +181,28 @@ const App: React.FC = () => {
 
           return {
             ...sess,
-            total_vta: sessionOrders.reduce((a, b) => a + b.amount_total, 0),
-            order_count: sessionOrders.length,
+            total_vta: sOrders.reduce((a, b) => a + b.amount_total, 0),
+            order_count: sOrders.length,
             payments: payBreakdown,
             users: userBreakdown,
             productAnalysis: productAnalysis
           };
         });
 
-        const configOrders = orders.filter(o => o.config_id[0] === config.id);
         stats[config.id] = {
           day_total: configOrders.reduce((a, b) => a + b.amount_total, 0),
           day_order_count: configOrders.length,
-          isOpened: !!activeSession,
-          openedBy: activeSession ? activeSession.user_id[1] : '---',
-          cashBalance: latestSession?.cash_register_balance_end_real || 0,
-          sessions: processedSessions,
-          lastClosing: latestSession?.stop_at ? new Date(latestSession.stop_at).toLocaleString('es-PE') : '---'
+          isOpened: !!configOpenSession,
+          openedBy: configOpenSession ? configOpenSession.user_id[1] : '---',
+          cashBalance: configPeriodSessions[0]?.cash_register_balance_end_real || 0,
+          sessions: processedSessions
         };
       }
       setPosSalesData(stats);
 
-      const items: any = {};
-      orderLines.forEach((l: any) => {
-        const pid = l.product_id[1];
-        if (!items[pid]) items[pid] = { name: pid, qty: 0, total: 0 };
-        items[pid].qty += l.qty;
-        items[pid].total += l.price_subtotal_incl;
-      });
-      setBestSellers(Object.values(items).sort((a: any, b: any) => b.qty - a.qty).slice(0, 10));
-
     } catch (e) {
-      console.error("Error analítica v18:", e);
-      setErrorLog("Fallo sincronización Odoo: Verifique conexión");
+      console.error("Error diagnóstico SJS:", e);
+      setErrorLog("Error de conexión Odoo. Reintentando...");
     } finally {
       setLoading(false);
     }
@@ -216,26 +210,21 @@ const App: React.FC = () => {
 
   const exportSessionExcel = (sess: any, configName: string) => {
     const wb = XLSX.utils.book_new();
-    const resumenFinanciero = [
-      { 'CAMPO': 'ID SESIÓN ODOO', 'VALOR': sess.id },
+    const resumen = [
+      { 'CAMPO': 'ID SESIÓN', 'VALOR': sess.id },
       { 'CAMPO': 'BOTICA', 'VALOR': configName },
       { 'CAMPO': 'RESPONSABLE', 'VALOR': sess.user_id[1] },
       { 'CAMPO': 'APERTURA', 'VALOR': sess.start_at },
-      { 'CAMPO': 'CIERRE', 'VALOR': sess.stop_at || 'EN CURSO' },
-      { 'CAMPO': 'Venta Total del Turno', 'VALOR': 'S/ ' + sess.total_vta.toFixed(2) },
-      { 'CAMPO': 'Tickets Realizados', 'VALOR': sess.order_count },
+      { 'CAMPO': 'CIERRE', 'VALOR': sess.stop_at || 'ACTIVA' },
+      { 'CAMPO': 'TOTAL VENTA', 'VALOR': sess.total_vta },
       { 'CAMPO': '', 'VALOR': '' },
-      { 'CAMPO': '--- ARQUEO POR MÉTODOS ---', 'VALOR': '' },
-      ...Object.entries(sess.payments).map(([m, a]) => ({ 'CAMPO': m, 'VALOR': 'S/ ' + Number(a).toFixed(2) })),
-      { 'CAMPO': '', 'VALOR': '' },
-      { 'CAMPO': '--- VENTAS POR PERSONAL ---', 'VALOR': '' },
-      ...Object.entries(sess.users).map(([u, a]) => ({ 'CAMPO': u, 'VALOR': 'S/ ' + Number(a).toFixed(2) }))
+      ...Object.entries(sess.payments).map(([m, a]) => ({ 'CAMPO': 'Pago: ' + m, 'VALOR': a }))
     ];
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(resumenFinanciero), "Resumen Financiero");
-    if (sess.productAnalysis && sess.productAnalysis.length > 0) {
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sess.productAnalysis), "Rentabilidad de Productos");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(resumen), "Resumen Financiero");
+    if (sess.productAnalysis?.length > 0) {
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sess.productAnalysis), "Detalle Rentabilidad");
     }
-    XLSX.writeFile(wb, `Audit_Sesion_${sess.id}_${configName}.xlsx`);
+    XLSX.writeFile(wb, `Reporte_SJS_${configName}_${sess.id}.xlsx`);
   };
 
   const exportConsolidadoExcel = () => {
@@ -245,12 +234,12 @@ const App: React.FC = () => {
       return {
         'Sede': config.name,
         'Venta Total Periodo': d.day_total || 0,
-        'Tickets Periodo': d.day_order_count || 0,
-        'Estado Actual': d.isOpened ? 'ABIERTA' : 'CERRADA',
+        'Tickets': d.day_order_count || 0,
+        'Estado': d.isOpened ? 'ABIERTA' : 'CERRADA',
         'Responsable': d.openedBy || '---'
       };
     });
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Consolidado Red");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Consolidado");
     XLSX.writeFile(wb, `Consolidado_SJS_${reportDateStart}.xlsx`);
   };
 
@@ -285,9 +274,7 @@ const App: React.FC = () => {
         { limit: 500, context: { location: principal1.lot_stock_id[0], compute_child_locations: false } }
       );
       setProducts(pData.filter((p: any) => p.qty_available > 0));
-    } catch (e: any) {
-      setErrorLog("Error stock: " + e.message);
-    } finally { setLoading(false); }
+    } catch (e: any) { setErrorLog(e.message); } finally { setLoading(false); }
   }, [client, principal1]);
 
   const submitToOdoo = async () => {
@@ -462,7 +449,7 @@ const App: React.FC = () => {
                       <p className="text-2xl font-black text-odoo-success">{posConfigs.filter(c => posSalesData[c.id]?.isOpened).length} / {posConfigs.length}</p>
                    </div>
                    <div className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm">
-                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Efectivo Proyectado</p>
+                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Efectivo Turno Actual</p>
                       <p className="text-2xl font-black text-amber-500">S/ {Number(Object.values(posSalesData).reduce((a: number, b: any) => a + (b.cashBalance || 0), 0)).toFixed(2)}</p>
                    </div>
                 </div>
@@ -485,7 +472,7 @@ const App: React.FC = () => {
                                </span>
                             </div>
                             <div className="space-y-4 cursor-pointer" onClick={() => { setSelectedPosConfig(config); setSelectedSessionId(null); }}>
-                               <div className="flex justify-between items-center"><p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Responsable Hoy</p><p className="text-xs font-black text-gray-700">{sales.openedBy || '---'}</p></div>
+                               <div className="flex justify-between items-center"><p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Responsable Actual</p><p className="text-xs font-black text-gray-700">{sales.openedBy || '---'}</p></div>
                                <div className="flex justify-between items-center"><p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Saldo Real Odoo</p><p className="text-sm font-black text-amber-500">S/ {Number(sales.cashBalance || 0).toFixed(2)}</p></div>
                                <div className="flex justify-between items-center pt-4 border-t border-gray-50"><p className="text-[10px] font-black text-odoo-primary uppercase tracking-widest">Venta Periodo</p><p className="text-lg font-black text-gray-800">S/ {Number(sales.day_total || 0).toFixed(2)}</p></div>
                             </div>
@@ -502,13 +489,13 @@ const App: React.FC = () => {
                      {selectedPosConfig ? (
                        <div className="bg-white p-8 rounded-[3rem] border border-gray-100 shadow-xl o-animate-fade space-y-8">
                           <div>
-                            <h3 className="text-xs font-black text-gray-400 uppercase tracking-[0.2em] mb-4 flex items-center gap-2"><ListFilter size={16}/> TURNOS REGISTRADOS</h3>
+                            <h3 className="text-xs font-black text-gray-400 uppercase tracking-[0.2em] mb-4 flex items-center gap-2"><ListFilter size={16}/> TURNOS DEL PERIODO</h3>
                             <div className="space-y-3 max-h-[400px] overflow-y-auto custom-scrollbar px-1">
                                {currentSessions.map((s: any) => (
                                  <button key={s.id} onClick={() => setSelectedSessionId(s.id)} className={`w-full p-4 rounded-2xl border text-left transition-all ${activeSession?.id === s.id ? 'bg-odoo-primary text-white border-odoo-primary shadow-lg' : 'bg-gray-50 border-transparent hover:bg-gray-100'}`}>
                                     <div className="flex justify-between items-start mb-2">
                                        <p className="text-[10px] font-black uppercase tracking-widest">Sesión #{s.id}</p>
-                                       <span className={`text-[8px] font-black px-2 py-1 rounded-lg uppercase ${s.state === 'opened' || s.state === 'opening_control' ? 'bg-green-500 text-white animate-pulse' : 'bg-gray-300 text-gray-600'}`}>{s.state === 'opened' || s.state === 'opening_control' ? 'ABIERTA' : 'CERRADA'}</span>
+                                       <span className={`text-[8px] font-black px-2 py-1 rounded-lg uppercase ${s.state === 'opened' ? 'bg-green-500 text-white animate-pulse' : 'bg-gray-300 text-gray-600'}`}>{s.state === 'opened' ? 'ABIERTA' : 'CERRADA'}</span>
                                     </div>
                                     <p className="text-xs font-black truncate">{s.user_id[1]}</p>
                                     <div className="flex justify-between items-end mt-3">
@@ -520,7 +507,7 @@ const App: React.FC = () => {
                                     </div>
                                  </button>
                                ))}
-                               {currentSessions.length === 0 && <p className="text-center py-10 text-[10px] font-black text-gray-300 uppercase italic">Sin turnos en el periodo</p>}
+                               {currentSessions.length === 0 && <p className="text-center py-10 text-[10px] font-black text-gray-300 uppercase italic">Sin datos para este rango</p>}
                             </div>
                           </div>
 
@@ -535,7 +522,7 @@ const App: React.FC = () => {
 
                                <div className="space-y-4">
                                   <div className="flex justify-between items-center p-3 bg-amber-50 rounded-xl border border-amber-100">
-                                     <p className="text-[10px] font-black text-amber-700 uppercase">Inicio de Caja</p>
+                                     <p className="text-[10px] font-black text-amber-700 uppercase">Inicio Caja</p>
                                      <p className="text-xs font-black text-amber-700">S/ {activeSession.cash_register_balance_start.toFixed(2)}</p>
                                   </div>
                                   
@@ -582,7 +569,7 @@ const App: React.FC = () => {
                      ) : (
                        <div className="bg-gray-100/50 p-12 rounded-[3rem] border border-dashed border-gray-200 text-center">
                           <Filter size={40} className="mx-auto text-gray-300 mb-4"/>
-                          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Seleccione una botica para auditar turnos sincronizados en tiempo real</p>
+                          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Seleccione una botica para ver auditoría en tiempo real</p>
                        </div>
                      )}
                   </div>

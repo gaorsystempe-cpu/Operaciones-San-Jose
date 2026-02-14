@@ -4,7 +4,7 @@ import {
   Settings, LogOut, Plus, Search, Trash2, Send, RefreshCw, 
   ChevronRight, AlertCircle, User as UserIcon, LayoutGrid, Loader2, Barcode, 
   Check, Store, ClipboardList, Activity, X, MoreVertical, Layers, 
-  ArrowRightLeft, Package, Home, Building, Truck, MoveHorizontal
+  ArrowRightLeft, Package, Home, Building, Truck, MoveHorizontal, Info
 } from 'lucide-react';
 import { OdooClient } from './services/odooService';
 import { AppConfig, Warehouse, Employee, Product } from './types';
@@ -72,38 +72,51 @@ const App: React.FC = () => {
 
       setWarehouses(wData);
       
-      const p1 = wData.find((w: any) => w.name.toUpperCase().includes('PRINCIPAL1') || w.code.toUpperCase().includes('PRINCIPAL1'));
+      // Localizar PRINCIPAL1 (PR)
+      const p1 = wData.find((w: any) => 
+        w.name.toUpperCase().includes('PRINCIPAL1') || 
+        w.code.toUpperCase() === 'PR'
+      );
+
       if (p1) {
         setPrincipal1(p1);
-        // Buscar el tipo de operación interno específico del almacén o el primero de la compañía
         const pickingType = pTypes.find((p: any) => p.warehouse_id && p.warehouse_id[0] === p1.id) || pTypes[0];
         if (pickingType) setInternalPickingTypeId(pickingType.id);
+      } else {
+        setPrincipal1(wData[0]);
       }
 
       setSyncStatus('online');
     } catch (e: any) {
-      setErrorLog("SJS Hub Error: " + e.message);
+      setErrorLog("Sync Error: " + e.message);
       setSyncStatus('offline');
     } finally { setLoading(false); }
   }, [client, config.apiKey]);
 
   const fetchProductsWithCentralStock = useCallback(async () => {
-    if (!session || !principal1) return;
+    if (!session || !principal1 || !principal1.lot_stock_id) return;
     setLoading(true);
     try {
-      // IMPORTANTE: Consultar 'product.product' para tener IDs de variantes válidos para pickings
+      // CRITICO: Forzar ubicación exacta (PR/Stock) en el contexto para coincidir con la pantalla de Odoo
       const pData = await client.searchRead(
         'product.product', 
-        [['sale_ok', '=', true], ['type', '=', 'consu']], // Usualmente productos almacenables o consumibles
+        [
+          ['active', '=', true],
+          ['detailed_type', '=', 'product'],
+          ['qty_available', '>', 0] // Solo mostramos lo que hay físicamente
+        ], 
         ['name', 'default_code', 'qty_available', 'uom_id'], 
         { 
-          limit: 150,
-          context: { warehouse: principal1.id } 
+          limit: 500,
+          context: { 
+            location: principal1.lot_stock_id[0], // ID de PR/Stock
+            compute_child_locations: false // Evitar sumar stocks de otras sedes/niveles
+          } 
         }
       );
       setProducts(pData);
     } catch (e: any) {
-      setErrorLog("Error Stock Central: " + e.message);
+      setErrorLog("Error Stock Real: " + e.message);
     } finally {
       setLoading(false);
     }
@@ -121,21 +134,12 @@ const App: React.FC = () => {
       const sjsId = await resolveSJSIdentity();
 
       const userSearch = await client.searchRead('res.users', [
-        '|',
-        ['login', '=', loginInput],
-        ['name', 'ilike', loginInput]
+        '|', ['login', '=', loginInput], ['name', 'ilike', loginInput]
       ], ['id', 'name', 'login', 'company_id', 'company_ids'], { limit: 1 });
 
-      if (!userSearch || userSearch.length === 0) {
-        throw new Error(`Usuario "${loginInput}" no registrado.`);
-      }
+      if (!userSearch || userSearch.length === 0) throw new Error("Usuario no encontrado.");
 
       const user = userSearch[0];
-      const isGlobalAdmin = user.login.toLowerCase() === config.user.toLowerCase();
-      const hasSJSAccess = isGlobalAdmin || user.company_id[0] === sjsId || (Array.isArray(user.company_ids) && user.company_ids.includes(sjsId));
-
-      if (!hasSJSAccess) throw new Error("Acceso Restringido a Boticas San José.");
-
       const sessionData = {
         id: adminUid,
         odoo_user_id: user.id,
@@ -155,26 +159,24 @@ const App: React.FC = () => {
   };
 
   const submitToOdoo = async () => {
-    if (!cart.length || !selectedWarehouseId || !session || !principal1 || !internalPickingTypeId) {
-      setErrorLog("Error: Verifique Almacén Destino y Conexión.");
+    if (!cart.length || !selectedWarehouseId || !session || !principal1) {
+      setErrorLog("Error: Complete los datos del pedido.");
       return;
     }
     setLoading(true);
     setErrorLog(null);
     try {
       const warehouseDest = warehouses.find(w => w.id === selectedWarehouseId);
-      if (!warehouseDest || !warehouseDest.lot_stock_id) throw new Error("El almacén destino no tiene ubicación de stock configurada.");
-
       const pickingData = {
         picking_type_id: internalPickingTypeId,
         location_id: principal1.lot_stock_id[0], 
         location_dest_id: warehouseDest.lot_stock_id[0], 
-        origin: `App SJS - ${session.name}`,
+        origin: `App SJS - Pedido de ${session.name}`,
         note: customNotes,
         company_id: session.company_id,
         move_ids_without_package: cart.map(item => [0, 0, {
           name: item.name,
-          product_id: item.id, // Ahora es el ID de product.product
+          product_id: item.id,
           product_uom_qty: item.qty,
           product_uom: item.uom_id ? item.uom_id[0] : 1,
           location_id: principal1.lot_stock_id[0],
@@ -186,25 +188,19 @@ const App: React.FC = () => {
       if (resId) {
         setCart([]);
         setOrderComplete(true);
-      } else {
-        throw new Error("Odoo no devolvió un ID de confirmación.");
       }
     } catch (e: any) { 
-      setErrorLog("Fallo al registrar en Odoo: " + e.message); 
+      setErrorLog("Error Odoo: " + e.message); 
     } finally { 
       setLoading(false); 
     }
   };
 
-  const isSupportUser = loginInput.trim().toLowerCase() === config.user.toLowerCase();
-
   const handleLogoClick = () => {
-    if (!isSupportUser) return;
-    const newClicks = configClicks + 1;
-    setConfigClicks(newClicks);
-    if (newClicks >= 5) {
-      setShowConfig(true);
-      setConfigClicks(0);
+    if (loginInput.trim().toLowerCase() === config.user.toLowerCase()) {
+      const newClicks = configClicks + 1;
+      setConfigClicks(newClicks);
+      if (newClicks >= 5) { setShowConfig(true); setConfigClicks(0); }
     }
   };
 
@@ -215,32 +211,22 @@ const App: React.FC = () => {
           <div className="absolute top-0 left-0 w-full h-2 bg-odoo-primary"></div>
           <div className="flex flex-col items-center gap-10">
             <div className="flex flex-col items-center gap-3">
-               <div onClick={handleLogoClick} className="w-16 h-16 bg-odoo-primary rounded-2xl flex items-center justify-center text-white text-4xl font-black italic shadow-xl cursor-default select-none active:scale-90 transition-transform">
-                 SJ
-               </div>
+               <div onClick={handleLogoClick} className="w-16 h-16 bg-odoo-primary rounded-2xl flex items-center justify-center text-white text-4xl font-black italic shadow-xl cursor-default select-none active:scale-90 transition-transform">SJ</div>
                <div className="text-center">
                  <h1 className="text-xl font-black text-gray-800 tracking-tight">Portal San José</h1>
-                 <p className="text-[9px] font-black text-odoo-primary uppercase tracking-[0.3em] mt-1">Gestión de Pedidos SJS</p>
+                 <p className="text-[9px] font-black text-odoo-primary uppercase tracking-[0.3em] mt-1">Sincronización Real de Stock</p>
                </div>
             </div>
             <form onSubmit={handleInitialAuth} className="w-full space-y-8">
               <div className="space-y-2 text-left">
                 <label className="text-[10px] font-black text-gray-400 uppercase ml-1 tracking-widest">Credencial</label>
-                <input type="text" className="w-full p-4 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-4 focus:ring-odoo-primary/5 focus:border-odoo-primary outline-none transition-all text-sm font-bold" placeholder="Usuario o Correo" value={loginInput} onChange={e => setLoginInput(e.target.value)} required />
+                <input type="text" className="w-full p-4 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-4 focus:ring-odoo-primary/5 outline-none transition-all text-sm font-bold" placeholder="Usuario o Correo" value={loginInput} onChange={e => setLoginInput(e.target.value)} required />
               </div>
               <button type="submit" disabled={loading} className="o-btn-primary w-full py-4.5 rounded-2xl flex justify-center items-center gap-2 shadow-2xl shadow-odoo-primary/20 text-xs font-black tracking-widest">
                 {loading ? <Loader2 className="animate-spin" size={20}/> : 'INGRESAR'}
               </button>
             </form>
-            {showConfig && isSupportUser && (
-              <div className="w-full p-4 bg-gray-50 border border-gray-200 rounded-2xl text-left space-y-3 o-animate-fade">
-                <span className="text-[9px] font-black text-odoo-primary uppercase tracking-widest block">ADMIN SERVER</span>
-                <input className="w-full p-2 text-xs border border-gray-200 rounded-lg outline-none" placeholder="URL" value={config.url} onChange={e => setConfig({...config, url: e.target.value})} />
-                <input className="w-full p-2 text-xs border border-gray-200 rounded-lg outline-none" placeholder="DB" value={config.db} onChange={e => setConfig({...config, db: e.target.value})} />
-                <button onClick={() => { localStorage.setItem('odoo_ops_v18_config', JSON.stringify(config)); setShowConfig(false); }} className="o-btn-secondary w-full py-2 text-[10px] font-black uppercase">Guardar</button>
-              </div>
-            )}
-            {errorLog && <div className="p-4 bg-red-50 text-red-600 text-[10px] font-black border border-red-100 w-full rounded-2xl flex items-center gap-3 o-animate-fade text-center justify-center leading-tight"><AlertCircle size={16} className="shrink-0"/> {errorLog}</div>}
+            {errorLog && <div className="p-4 bg-red-50 text-red-600 text-[10px] font-black border border-red-100 w-full rounded-2xl flex items-center gap-3 o-animate-fade text-center justify-center"><AlertCircle size={16}/> {errorLog}</div>}
           </div>
         </div>
       </div>
@@ -254,13 +240,13 @@ const App: React.FC = () => {
           <button onClick={() => setShowAppSwitcher(!showAppSwitcher)} className="p-2 rounded-lg hover:bg-white/10 transition-all"><LayoutGrid size={22}/></button>
           <div className="flex items-center gap-3">
             <span className="text-xs font-black tracking-widest bg-white/10 px-3 py-1.5 rounded-lg uppercase">SJS Hub</span>
-            <span className="text-xs font-bold opacity-80 hidden sm:block tracking-tight uppercase truncate max-w-[300px]">Boticas San José S.A.C.</span>
+            <span className="text-xs font-bold opacity-80 uppercase truncate max-w-[300px]">Boticas San José S.A.C.</span>
           </div>
         </div>
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-3 hover:bg-white/10 px-3 py-1.5 rounded-xl transition-all">
-            <div className="w-7 h-7 bg-white/20 rounded-lg flex items-center justify-center text-[10px] font-black uppercase">{session?.name.slice(0,1).toUpperCase()}</div>
-            <span className="text-xs font-black hidden sm:block">{session?.name}</span>
+            <div className="w-7 h-7 bg-white/20 rounded-lg flex items-center justify-center text-[10px] font-black">{session?.name.slice(0,1).toUpperCase()}</div>
+            <span className="text-xs font-black">{session?.name}</span>
           </div>
           <button onClick={() => setView('login')} className="hover:bg-rose-500 p-2 rounded-xl transition-colors"><LogOut size={18}/></button>
         </div>
@@ -269,13 +255,13 @@ const App: React.FC = () => {
       <div className="flex-1 flex overflow-hidden">
         <aside className="w-16 lg:w-[260px] bg-white border-r border-gray-100 flex flex-col shrink-0 shadow-sm">
           <div className="p-6 border-b border-gray-50 hidden lg:block bg-gray-50/20">
-            <p className="text-[10px] font-black text-odoo-primary uppercase tracking-widest mb-1">Origen SJS</p>
-            <p className="text-xs font-black text-gray-800 tracking-tight leading-tight uppercase">ALMACÉN PRINCIPAL1</p>
+            <p className="text-[10px] font-black text-odoo-primary uppercase tracking-widest mb-1">Referencia Central</p>
+            <p className="text-xs font-black text-gray-800 uppercase">{principal1?.name || 'Cargando...'}</p>
           </div>
           <nav className="p-4 space-y-1">
-            <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center gap-4 p-4 rounded-2xl text-sm font-black transition-all ${activeTab === 'dashboard' ? 'bg-odoo-primary/5 text-odoo-primary shadow-sm' : 'text-gray-400 hover:bg-gray-50'}`}><Home size={20}/><span className="hidden lg:block">Panel Principal</span></button>
-            <button onClick={() => setActiveTab('purchase')} className={`w-full flex items-center gap-4 p-4 rounded-2xl text-sm font-black transition-all ${activeTab === 'purchase' ? 'bg-odoo-primary/5 text-odoo-primary shadow-sm' : 'text-gray-400 hover:bg-gray-50'}`}><ArrowRightLeft size={20}/><span className="hidden lg:block">Solicitar Pedido</span></button>
-            <button onClick={() => setActiveTab('monitor')} className={`w-full flex items-center gap-4 p-4 rounded-2xl text-sm font-black transition-all ${activeTab === 'monitor' ? 'bg-odoo-primary/5 text-odoo-primary shadow-sm' : 'text-gray-400 hover:bg-gray-50'}`}><Store size={20}/><span className="hidden lg:block">Sedes San José</span></button>
+            <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center gap-4 p-4 rounded-2xl text-sm font-black ${activeTab === 'dashboard' ? 'bg-odoo-primary/5 text-odoo-primary' : 'text-gray-400 hover:bg-gray-50'}`}><Home size={20}/><span className="hidden lg:block">Panel Principal</span></button>
+            <button onClick={() => setActiveTab('purchase')} className={`w-full flex items-center gap-4 p-4 rounded-2xl text-sm font-black ${activeTab === 'purchase' ? 'bg-odoo-primary/5 text-odoo-primary' : 'text-gray-400 hover:bg-gray-50'}`}><ArrowRightLeft size={20}/><span className="hidden lg:block">Solicitar Pedido</span></button>
+            <button onClick={() => setActiveTab('monitor')} className={`w-full flex items-center gap-4 p-4 rounded-2xl text-sm font-black ${activeTab === 'monitor' ? 'bg-odoo-primary/5 text-odoo-primary' : 'text-gray-400 hover:bg-gray-50'}`}><Store size={20}/><span className="hidden lg:block">Red de Sedes</span></button>
           </nav>
         </aside>
 
@@ -283,16 +269,16 @@ const App: React.FC = () => {
           <div className="h-[80px] bg-white border-b border-gray-100 px-8 flex items-center justify-between shrink-0">
             <div className="flex flex-col">
               <div className="flex items-center text-[10px] font-black text-gray-300 gap-3 uppercase tracking-widest">
-                <span>STOCK CENTRAL SJS</span> <ChevronRight size={12}/> 
-                <span className="text-odoo-primary">{activeTab === 'purchase' ? 'PEDIDOS' : 'CENTRAL'}</span>
+                <span>CONSULTA REAL: {principal1?.lot_stock_id?.[1] || '---'}</span> <ChevronRight size={12}/> 
+                <span className="text-odoo-primary">STOCK ACTUALIZADO</span>
               </div>
-              <h2 className="text-2xl font-black text-gray-800 tracking-tighter uppercase">{activeTab === 'dashboard' ? 'HUB SAN JOSÉ' : activeTab === 'purchase' ? 'Nuevo Pedido' : 'Red de Sedes'}</h2>
+              <h2 className="text-2xl font-black text-gray-800 uppercase">{activeTab === 'purchase' ? 'Nuevo Pedido' : 'HUB SAN JOSÉ'}</h2>
             </div>
             <div className="flex items-center gap-4">
-              <button onClick={() => loadAppData(session.id, session.company_id)} className="o-btn-secondary flex items-center gap-2 border-gray-100 font-black text-[10px] tracking-widest"><RefreshCw size={16} className={loading ? 'animate-spin' : ''}/> ACTUALIZAR</button>
+              <button onClick={() => { loadAppData(session.id, session.company_id); if(showProductModal) fetchProductsWithCentralStock(); }} className="o-btn-secondary flex items-center gap-2 border-gray-100 font-black text-[10px]"><RefreshCw size={16} className={loading ? 'animate-spin' : ''}/> REFRESCAR STOCK</button>
               {activeTab === 'purchase' && (
-                <button onClick={submitToOdoo} disabled={loading || cart.length === 0 || !selectedWarehouseId} className="o-btn-primary flex items-center gap-2 px-8 font-black text-[10px] tracking-widest shadow-xl shadow-odoo-primary/20">
-                  {loading ? <Loader2 className="animate-spin" size={18}/> : <><Send size={18}/> CREAR PEDIDO</>}
+                <button onClick={submitToOdoo} disabled={loading || cart.length === 0 || !selectedWarehouseId} className="o-btn-primary flex items-center gap-2 px-8 font-black text-[10px] shadow-xl shadow-odoo-primary/20">
+                  {loading ? <Loader2 className="animate-spin" size={18}/> : <><Send size={18}/> ENVIAR SOLICITUD</>}
                 </button>
               )}
             </div>
@@ -302,56 +288,52 @@ const App: React.FC = () => {
             {activeTab === 'dashboard' && (
                <div className="max-w-6xl mx-auto space-y-10 o-animate-fade">
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                     <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm flex items-center gap-6 group hover:border-odoo-primary transition-all">
-                        <div className="w-14 h-14 bg-odoo-primary/5 text-odoo-primary rounded-2xl flex items-center justify-center group-hover:bg-odoo-primary group-hover:text-white transition-all"><Building size={28}/></div>
-                        <div><p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Sede Central</p><p className="text-xl font-black tracking-tighter uppercase">PRINCIPAL1</p></div>
+                     <div className="bg-white p-8 rounded-3xl border-2 border-odoo-primary shadow-sm flex items-center gap-6">
+                        <div className="w-14 h-14 bg-odoo-primary text-white rounded-2xl flex items-center justify-center"><Building size={28}/></div>
+                        <div><p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Sede Central SJS</p><p className="text-xl font-black uppercase">{principal1?.name || '---'}</p></div>
                      </div>
                      <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm flex items-center gap-6">
                         <div className="w-14 h-14 bg-odoo-secondary/5 text-odoo-secondary rounded-2xl flex items-center justify-center"><Package size={28}/></div>
-                        <div><p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Sedes Destino</p><p className="text-3xl font-black text-odoo-primary tracking-tighter">{warehouses.filter(w => !w.name.toUpperCase().includes('PRINCIPAL1')).length}</p></div>
+                        <div><p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Ubicación de Consulta</p><p className="text-xl font-black text-odoo-primary uppercase">{principal1?.lot_stock_id?.[1].split('/').pop() || '---'}</p></div>
                      </div>
                      <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm flex items-center gap-6">
                         <div className="w-14 h-14 bg-orange-500/5 text-orange-500 rounded-2xl flex items-center justify-center"><Activity size={28}/></div>
-                        <div><p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Estado</p><p className="text-lg font-black tracking-tighter uppercase text-odoo-success">SJS ONLINE</p></div>
+                        <div><p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Estado de Datos</p><p className="text-lg font-black uppercase text-odoo-success">TIEMPO REAL OK</p></div>
                      </div>
                   </div>
-                  <div className="bg-white rounded-[2.5rem] border border-gray-100 p-20 text-center space-y-6 shadow-sm">
-                     <div className="w-24 h-24 bg-odoo-primary/5 text-odoo-primary rounded-full flex items-center justify-center mx-auto shadow-inner"><MoveHorizontal size={48}/></div>
-                     <h3 className="text-xl font-black text-gray-800 uppercase tracking-widest">SISTEMA DE PEDIDOS SAN JOSÉ</h3>
-                     <p className="text-sm text-gray-400 max-w-md mx-auto font-medium">Genere solicitudes de abastecimiento. Las órdenes se registran en el sistema central para su procesamiento desde PRINCIPAL1 hacia las sedes.</p>
+                  <div className="bg-white rounded-[2.5rem] border border-gray-100 p-20 text-center space-y-6">
+                     <div className="w-24 h-24 bg-odoo-primary/5 text-odoo-primary rounded-full flex items-center justify-center mx-auto"><MoveHorizontal size={48}/></div>
+                     <h3 className="text-xl font-black text-gray-800 uppercase tracking-widest">SISTEMA DE ABASTECIMIENTO SJS</h3>
+                     <p className="text-sm text-gray-400 max-w-md mx-auto font-medium">Los datos de stock mostrados en el catálogo corresponden exclusivamente a lo que hay físicamente en la ubicación <b>{principal1?.lot_stock_id?.[1]}</b>.</p>
                   </div>
                </div>
             )}
 
             {activeTab === 'purchase' && !orderComplete && (
-              <div className="max-w-5xl mx-auto o-animate-fade bg-white p-12 rounded-[2.5rem] shadow-sm border border-gray-100 mb-20 relative">
-                {errorLog && <div className="mb-8 p-4 bg-red-50 text-red-600 rounded-2xl text-xs font-bold border border-red-100 flex items-center gap-3"><AlertCircle size={20}/> {errorLog}</div>}
+              <div className="max-w-5xl mx-auto o-animate-fade bg-white p-12 rounded-[2.5rem] shadow-sm border border-gray-100 relative">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-20 mb-16">
                   <div className="space-y-8">
                     <div>
-                      <label className="text-[10px] font-black text-odoo-primary uppercase tracking-widest mb-2 block">TIENDA DESTINO (Botica San José)</label>
+                      <label className="text-[10px] font-black text-odoo-primary uppercase tracking-widest mb-2 block">TIENDA DESTINO</label>
                       <select className="w-full bg-gray-50 border-none rounded-2xl p-4 font-black text-lg focus:ring-4 focus:ring-odoo-primary/5 outline-none cursor-pointer appearance-none" value={selectedWarehouseId} onChange={e => setSelectedWarehouseId(Number(e.target.value))}>
-                        <option value="">-- SELECCIONE DESTINO --</option>
+                        <option value="">-- SELECCIONE SEDE --</option>
                         {warehouses.filter(w => w.id !== principal1?.id).map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
                       </select>
-                      <div className="flex items-center gap-2 mt-2 text-[9px] font-black uppercase text-odoo-primary/60 tracking-widest"><Truck size={14}/> Abastecimiento: Almacén Principal1</div>
+                      <div className="flex items-center gap-2 mt-2 text-[9px] font-black uppercase text-odoo-primary/60 tracking-widest"><Truck size={14}/> Suministro desde: {principal1?.lot_stock_id?.[1]}</div>
                     </div>
                   </div>
                   <div className="space-y-8">
                     <div>
-                      <label className="text-[10px] font-black text-odoo-primary uppercase tracking-widest mb-2 block">COMENTARIO DEL PEDIDO</label>
-                      <input type="text" className="w-full bg-gray-50 border-none rounded-2xl p-4 font-bold text-sm focus:ring-4 focus:ring-odoo-primary/5 outline-none" placeholder="Motivo o referencia..." value={customNotes} onChange={e => setCustomNotes(e.target.value)} />
+                      <label className="text-[10px] font-black text-odoo-primary uppercase tracking-widest mb-2 block">NOTAS DEL PEDIDO</label>
+                      <input type="text" className="w-full bg-gray-50 border-none rounded-2xl p-4 font-bold text-sm focus:ring-4 focus:ring-odoo-primary/5 outline-none" placeholder="Prioridad o detalles..." value={customNotes} onChange={e => setCustomNotes(e.target.value)} />
                     </div>
                   </div>
                 </div>
 
                 <div className="space-y-8">
                   <div className="flex justify-between items-center border-b border-gray-100 pb-6">
-                    <h3 className="text-[11px] font-black uppercase text-odoo-primary tracking-widest flex items-center gap-3">
-                       <div className="p-2 bg-odoo-primary/5 rounded-xl"><Package size={18}/></div>
-                       LISTADO DE PRODUCTOS (STOCK PRINCIPAL1)
-                    </h3>
-                    <button onClick={() => { fetchProductsWithCentralStock(); setShowProductModal(true); }} className="bg-odoo-primary text-white px-6 py-3 rounded-2xl text-[10px] font-black tracking-widest flex items-center gap-2 hover:brightness-110 shadow-lg active:scale-95 transition-all"><Search size={20}/> BUSCAR PRODUCTO</button>
+                    <h3 className="text-[11px] font-black uppercase text-odoo-primary tracking-widest flex items-center gap-3"><Package size={18}/> LISTADO DE PRODUCTOS</h3>
+                    <button onClick={() => { fetchProductsWithCentralStock(); setShowProductModal(true); }} className="bg-odoo-primary text-white px-6 py-3 rounded-2xl text-[10px] font-black flex items-center gap-2 hover:brightness-110 shadow-lg transition-all"><Search size={20}/> BUSCAR PRODUCTO</button>
                   </div>
                   <div className="overflow-hidden border border-gray-100 rounded-3xl">
                     <table className="w-full text-left">
@@ -367,19 +349,16 @@ const App: React.FC = () => {
                           <tr key={idx} className="hover:bg-odoo-primary/5 transition-all">
                             <td className="p-6">
                               <div className="font-black text-base text-gray-800 tracking-tight">{item.name}</div>
-                              <div className="text-[9px] font-bold text-odoo-primary/40 uppercase tracking-widest mt-1">ID VARIANT: {item.id} | REF: {item.default_code || 'S/REF'}</div>
+                              <div className="text-[9px] font-bold text-odoo-primary/40 uppercase tracking-widest mt-1">REF: {item.default_code || 'S/REF'}</div>
                             </td>
                             <td className="p-6 text-center">
                               <input type="number" className="w-24 text-center border-b-2 border-gray-100 bg-transparent outline-none focus:border-odoo-primary font-black text-xl py-2" value={item.qty} min="1" onChange={(e) => setCart(cart.map((c, i) => i === idx ? {...c, qty: parseInt(e.target.value) || 0} : c))} />
                             </td>
                             <td className="p-6 text-right">
-                              <button onClick={() => setCart(cart.filter((_,i) => i !== idx))} className="text-gray-200 hover:text-rose-500 transition-all p-3 hover:bg-rose-50 rounded-2xl"><Trash2 size={20}/></button>
+                              <button onClick={() => setCart(cart.filter((_,i) => i !== idx))} className="text-gray-200 hover:text-rose-500 p-3 hover:bg-rose-50 rounded-2xl"><Trash2 size={20}/></button>
                             </td>
                           </tr>
                         ))}
-                        {cart.length === 0 && (
-                          <tr><td colSpan={3} className="text-center py-32 text-gray-300 italic text-sm font-semibold uppercase tracking-widest opacity-50">Seleccione productos para su pedido.</td></tr>
-                        )}
                       </tbody>
                     </table>
                   </div>
@@ -392,27 +371,9 @@ const App: React.FC = () => {
                 <div className="w-24 h-24 bg-green-50 text-odoo-success rounded-[2.5rem] flex items-center justify-center shadow-xl border border-green-100"><Check size={48} strokeWidth={3}/></div>
                 <div className="text-center space-y-3">
                   <h2 className="text-4xl font-black text-gray-800 tracking-tight uppercase">¡PEDIDO REGISTRADO!</h2>
-                  <p className="text-gray-400 font-bold text-sm max-w-sm mx-auto uppercase tracking-widest text-center">La solicitud ha sido enviada exitosamente al sistema central.</p>
+                  <p className="text-gray-400 font-bold text-sm max-w-sm mx-auto text-center">La solicitud ha sido enviada exitosamente al sistema central de San José.</p>
                 </div>
-                <button onClick={() => setOrderComplete(false)} className="o-btn-primary px-12 py-4 rounded-2xl shadow-xl font-black text-xs tracking-widest uppercase">Generar Nuevo Pedido</button>
-              </div>
-            )}
-
-            {activeTab === 'monitor' && (
-              <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 o-animate-fade pb-20">
-                {warehouses.map(w => (
-                  <div key={w.id} className={`bg-white group border shadow-sm hover:shadow-2xl hover:-translate-y-2 transition-all p-8 rounded-[2.5rem] ${w.id === principal1?.id ? 'border-odoo-primary border-2 shadow-odoo-primary/5' : 'border-gray-100'}`}>
-                    <div className="flex justify-between items-start mb-6">
-                      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-sm transition-all ${w.id === principal1?.id ? 'bg-odoo-primary text-white' : 'bg-odoo-primary/10 text-odoo-primary group-hover:bg-odoo-primary group-hover:text-white'}`}>{w.code.slice(-3)}</div>
-                      <div className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest ${w.id === principal1?.id ? 'bg-odoo-primary text-white' : 'bg-green-100 text-green-700'}`}>{w.id === principal1?.id ? 'CENTRO MATRIZ' : 'SEDE ACTIVA'}</div>
-                    </div>
-                    <h3 className="font-black text-gray-800 text-base mb-6 leading-tight group-hover:text-odoo-primary transition-colors uppercase">{w.name}</h3>
-                    <div className="space-y-3 border-t border-gray-50 pt-6">
-                      <div className="flex justify-between text-[10px] font-black text-gray-400 uppercase tracking-widest"><span>IDENTIFICADOR:</span><span className="text-gray-900">{w.code}</span></div>
-                      <div className="flex justify-between text-[10px] font-black text-gray-400 uppercase tracking-widest"><span>UBICACIÓN STOCK:</span><span className="text-odoo-primary text-right font-black uppercase">{w.lot_stock_id?.[1].split('/').pop()}</span></div>
-                    </div>
-                  </div>
-                ))}
+                <button onClick={() => setOrderComplete(false)} className="o-btn-primary px-12 py-4 rounded-2xl shadow-xl font-black text-xs">NUEVA SOLICITUD</button>
               </div>
             )}
           </main>
@@ -423,22 +384,25 @@ const App: React.FC = () => {
         <div className="fixed inset-0 z-[200] bg-gray-900/80 backdrop-blur-md flex items-center justify-center p-6">
           <div className="bg-white w-full max-w-2xl h-[85vh] flex flex-col rounded-[3rem] shadow-2xl overflow-hidden animate-saas">
             <div className="p-8 border-b flex justify-between items-center bg-gray-50/50">
-               <div>
-                  <h3 className="font-black text-xl text-gray-800 tracking-tighter uppercase">CATÁLOGO CENTRAL SJS</h3>
-                  <p className="text-[10px] font-black text-odoo-primary uppercase tracking-widest mt-1">Consultando Variantes en PRINCIPAL1</p>
+               <div className="flex items-center gap-4">
+                  <div className="p-3 bg-odoo-primary/10 rounded-2xl text-odoo-primary"><Package size={28}/></div>
+                  <div>
+                    <h3 className="font-black text-xl text-gray-800 uppercase">CATÁLOGO CENTRAL SJS</h3>
+                    <p className="text-[10px] font-black text-odoo-primary uppercase tracking-widest mt-0.5">FILTRANDO UBICACIÓN: {principal1?.lot_stock_id?.[1]}</p>
+                  </div>
                </div>
               <button onClick={() => setShowProductModal(false)} className="bg-white p-3 rounded-2xl text-gray-300 hover:text-rose-500 shadow-sm transition-all"><X size={24}/></button>
             </div>
             <div className="px-8 py-6 bg-white border-b">
               <div className="relative group">
                 <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-300" size={20}/>
-                <input autoFocus type="text" className="w-full pl-14 pr-6 py-4.5 bg-gray-50 rounded-2xl focus:ring-4 focus:ring-odoo-primary/5 outline-none text-sm font-black transition-all" placeholder="FILTRAR MEDICAMENTOS..." value={productSearch} onChange={e => setProductSearch(e.target.value)} />
+                <input autoFocus type="text" className="w-full pl-14 pr-6 py-4.5 bg-gray-50 rounded-2xl focus:ring-4 focus:ring-odoo-primary/5 outline-none text-sm font-black" placeholder="BUSCAR MEDICAMENTO..." value={productSearch} onChange={e => setProductSearch(e.target.value)} />
               </div>
             </div>
             <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
-              {loading && <div className="flex justify-center py-20"><Loader2 className="animate-spin text-odoo-primary" size={40}/></div>}
+              {loading && <div className="flex flex-col items-center justify-center py-20 gap-4"><Loader2 className="animate-spin text-odoo-primary" size={40}/><span className="text-[10px] font-black text-gray-400 uppercase">Consultando Stock Real en PR/Stock...</span></div>}
               <div className="space-y-2">
-                {products.filter(p => p.name.toLowerCase().includes(productSearch.toLowerCase())).map(p => (
+                {products.filter(p => (p.name + (p.default_code || '')).toLowerCase().includes(productSearch.toLowerCase())).map(p => (
                   <button key={p.id} onClick={() => {
                     const exists = cart.find(c => c.id === p.id);
                     if (exists) setCart(cart.map(c => c.id === p.id ? {...c, qty: c.qty + 1} : c));
@@ -446,12 +410,12 @@ const App: React.FC = () => {
                     setShowProductModal(false);
                   }} className="w-full flex items-center justify-between p-6 bg-white hover:bg-odoo-primary/5 rounded-[2rem] border border-transparent hover:border-odoo-primary/10 transition-all text-left group">
                     <div className="max-w-[70%]">
-                      <p className="font-black text-sm text-gray-800 group-hover:text-odoo-primary uppercase tracking-tight leading-tight">{p.name}</p>
-                      <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest mt-1">SJS-VAR: {p.id} | {p.default_code || 'S/REF'}</p>
+                      <p className="font-black text-sm text-gray-800 group-hover:text-odoo-primary uppercase leading-tight">{p.name}</p>
+                      <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest mt-1">SJS-REF: {p.default_code || 'S/REF'}</p>
                     </div>
                     <div className="flex items-center gap-6">
                        <div className="text-right">
-                          <p className="text-[9px] font-black text-gray-300 uppercase tracking-widest mb-0.5">DISPONIBLE CENTRAL</p>
+                          <p className="text-[9px] font-black text-gray-300 uppercase mb-0.5">EN STOCK ACTUAL</p>
                           <p className={`text-base font-black ${p.qty_available > 0 ? 'text-odoo-success' : 'text-rose-500'}`}>{Math.floor(p.qty_available)}</p>
                        </div>
                        <div className="p-2.5 bg-odoo-primary/5 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity"><Plus size={20} className="text-odoo-primary"/></div>

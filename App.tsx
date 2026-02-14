@@ -160,18 +160,17 @@ const App: React.FC = () => {
 
   const submitToOdoo = async () => {
     if (!cart.length || !selectedWarehouseId || !session || !principal1 || !internalPickingTypeId) {
-      setErrorLog("Faltan datos críticos para la transferencia (Almacén o Tipo de Operación).");
+      setErrorLog("Faltan datos críticos para la solicitud (Almacén o Tipo de Operación).");
       return;
     }
     setLoading(true);
     try {
       const warehouseDest = warehouses.find(w => w.id === selectedWarehouseId);
       
-      // Objeto stock.picking (Transferencia Interna en Borrador)
       const pickingData = {
         picking_type_id: internalPickingTypeId,
-        location_id: principal1.lot_stock_id[0], // Ubicación Origen: Stock de PRINCIPAL1
-        location_dest_id: warehouseDest.lot_stock_id[0], // Ubicación Destino: Stock de Sede
+        location_id: principal1.lot_stock_id[0], 
+        location_dest_id: warehouseDest.lot_stock_id[0], 
         origin: `App SJS - Solicitado por ${session.name}`,
         note: customNotes,
         company_id: session.company_id,
@@ -225,7 +224,7 @@ const App: React.FC = () => {
                </div>
                <div className="text-center">
                  <h1 className="text-xl font-black text-gray-800 tracking-tight">Portal San José</h1>
-                 <p className="text-[9px] font-black text-odoo-primary uppercase tracking-[0.3em] mt-1">Gestión de Transferencias Internas</p>
+                 <p className="text-[9px] font-black text-odoo-primary uppercase tracking-[0.3em] mt-1">Gestión de Transferencias SJS</p>
                </div>
             </div>
             
@@ -264,7 +263,6 @@ const App: React.FC = () => {
 
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-white text-odoo-text">
-      {/* HEADER CORPORATIVO */}
       <header className="h-12 bg-odoo-primary text-white flex items-center justify-between px-4 shrink-0 z-[100] shadow-lg">
         <div className="flex items-center gap-5">
           <button 
@@ -300,7 +298,7 @@ const App: React.FC = () => {
               <Home size={20}/><span className="hidden lg:block">Panel Principal</span>
             </button>
             <button onClick={() => setActiveTab('purchase')} className={`w-full flex items-center gap-4 p-4 rounded-2xl text-sm font-black transition-all ${activeTab === 'purchase' ? 'bg-odoo-primary/5 text-odoo-primary shadow-sm' : 'text-gray-400 hover:bg-gray-50'}`}>
-              <ArrowRightLeft size={20}/><span className="hidden lg:block">Transferencia Interna</span>
+              <ArrowRightLeft size={20}/><span className="hidden lg:block">Solicitar Pedido</span>
             </button>
             <button onClick={() => setActiveTab('monitor')} className={`w-full flex items-center gap-4 p-4 rounded-2xl text-sm font-black transition-all ${activeTab === 'monitor' ? 'bg-odoo-primary/5 text-odoo-primary shadow-sm' : 'text-gray-400 hover:bg-gray-50'}`}>
               <Store size={20}/><span className="hidden lg:block">Sedes San José</span>
@@ -309,15 +307,14 @@ const App: React.FC = () => {
         </aside>
 
         <div className="flex-1 flex flex-col overflow-hidden">
-          {/* BARRA DE ACCIÓN */}
           <div className="h-[80px] bg-white border-b border-gray-100 px-8 flex items-center justify-between shrink-0">
             <div className="flex flex-col">
               <div className="flex items-center text-[10px] font-black text-gray-300 gap-3 uppercase tracking-widest">
                 <span>STOCK CENTRAL SJS</span> <ChevronRight size={12}/> 
-                <span className="text-odoo-primary">{activeTab === 'purchase' ? 'LOGÍSTICA' : 'CENTRAL'}</span>
+                <span className="text-odoo-primary">{activeTab === 'purchase' ? 'PEDIDOS' : 'CENTRAL'}</span>
               </div>
               <h2 className="text-2xl font-black text-gray-800 tracking-tighter uppercase">
-                {activeTab === 'dashboard' ? 'HUB SAN JOSÉ' : activeTab === 'purchase' ? 'Generar Transferencia' : 'Red de Sedes'}
+                {activeTab === 'dashboard' ? 'HUB SAN JOSÉ' : activeTab === 'purchase' ? 'Nuevo Pedido' : 'Red de Sedes'}
               </h2>
             </div>
             
@@ -327,7 +324,7 @@ const App: React.FC = () => {
               </button>
               {activeTab === 'purchase' && (
                 <button onClick={submitToOdoo} disabled={loading || cart.length === 0 || !selectedWarehouseId} className="o-btn-primary flex items-center gap-2 px-8 font-black text-[10px] tracking-widest shadow-xl shadow-odoo-primary/20">
-                  {loading ? <Loader2 className="animate-spin" size={18}/> : <><Send size={18}/> CREAR BORRADOR EN ODOO</>}
+                  {loading ? <Loader2 className="animate-spin" size={18}/> : <><Send size={18}/> CREAR PEDIDO</>}
                 </button>
               )}
             </div>
@@ -347,14 +344,14 @@ const App: React.FC = () => {
                      </div>
                      <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm flex items-center gap-6">
                         <div className="w-14 h-14 bg-orange-500/5 text-orange-500 rounded-2xl flex items-center justify-center"><Activity size={28}/></div>
-                        <div><p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Tipo de Operación</p><p className="text-lg font-black tracking-tighter uppercase text-odoo-success">TRANSF. INTERNA</p></div>
+                        <div><p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Tipo de Operación</p><p className="text-lg font-black tracking-tighter uppercase text-odoo-success">PEDIDOS SJS</p></div>
                      </div>
                   </div>
                   <div className="bg-white rounded-[2.5rem] border border-gray-100 p-20 text-center space-y-6 shadow-sm">
                      <div className="w-24 h-24 bg-odoo-primary/5 text-odoo-primary rounded-full flex items-center justify-center mx-auto shadow-inner"><MoveHorizontal size={48}/></div>
                      <div className="space-y-3">
-                        <h3 className="text-xl font-black text-gray-800 uppercase tracking-widest">SISTEMA DE TRANSFERENCIAS SJS</h3>
-                        <p className="text-sm text-gray-400 max-w-md mx-auto font-medium">Este terminal genera movimientos de inventario directos. Las órdenes se crean en Odoo como Transferencias Internas en borrador desde la central hacia las sedes.</p>
+                        <h3 className="text-xl font-black text-gray-800 uppercase tracking-widest">SISTEMA DE PEDIDOS SAN JOSÉ</h3>
+                        <p className="text-sm text-gray-400 max-w-md mx-auto font-medium">Este terminal permite generar solicitudes de abastecimiento. Las órdenes se registran en el sistema central para su procesamiento desde PRINCIPAL1 hacia las sedes.</p>
                      </div>
                   </div>
                </div>
@@ -371,14 +368,14 @@ const App: React.FC = () => {
                         {warehouses.filter(w => w.id !== principal1?.id).map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
                       </select>
                       <div className="flex items-center gap-2 mt-2 text-[9px] font-black uppercase text-odoo-primary/60 tracking-widest">
-                        <Truck size={14}/> Origen bloqueado: Almacén Principal1
+                        <Truck size={14}/> Abastecimiento: Almacén Principal1
                       </div>
                     </div>
                   </div>
                   <div className="space-y-8">
                     <div>
-                      <label className="text-[10px] font-black text-odoo-primary uppercase tracking-widest mb-2 block">COMENTARIO DE TRANSFERENCIA</label>
-                      <input type="text" className="w-full bg-gray-50 border-none rounded-2xl p-4 font-bold text-sm focus:ring-4 focus:ring-odoo-primary/5 outline-none" placeholder="Motivo o referencia del envío..." value={customNotes} onChange={e => setCustomNotes(e.target.value)} />
+                      <label className="text-[10px] font-black text-odoo-primary uppercase tracking-widest mb-2 block">COMENTARIO DEL PEDIDO</label>
+                      <input type="text" className="w-full bg-gray-50 border-none rounded-2xl p-4 font-bold text-sm focus:ring-4 focus:ring-odoo-primary/5 outline-none" placeholder="Indique prioridad o detalles adicionales..." value={customNotes} onChange={e => setCustomNotes(e.target.value)} />
                     </div>
                   </div>
                 </div>
@@ -387,13 +384,13 @@ const App: React.FC = () => {
                   <div className="flex justify-between items-center border-b border-gray-100 pb-6">
                     <h3 className="text-[11px] font-black uppercase text-odoo-primary tracking-widest flex items-center gap-3">
                        <div className="p-2 bg-odoo-primary/5 rounded-xl"><Package size={18}/></div>
-                       MEDICAMENTOS A TRANSFERIR (STOCK PRINCIPAL1)
+                       LISTADO DE PRODUCTOS (STOCK PRINCIPAL1)
                     </h3>
                     <button onClick={() => {
                       fetchProductsWithCentralStock();
                       setShowProductModal(true);
                     }} className="bg-odoo-primary text-white px-6 py-3 rounded-2xl text-[10px] font-black tracking-widest flex items-center gap-2 hover:brightness-110 shadow-lg active:scale-95 transition-all">
-                      <Search size={20}/> BUSCAR EN CENTRAL
+                      <Search size={20}/> BUSCAR PRODUCTO
                     </button>
                   </div>
                   <div className="overflow-hidden border border-gray-100 rounded-3xl">
@@ -430,7 +427,7 @@ const App: React.FC = () => {
                         ))}
                         {cart.length === 0 && (
                           <tr>
-                            <td colSpan={3} className="text-center py-32 text-gray-300 italic text-sm font-semibold uppercase tracking-widest opacity-50">Seleccione productos del Stock de Central.</td>
+                            <td colSpan={3} className="text-center py-32 text-gray-300 italic text-sm font-semibold uppercase tracking-widest opacity-50">Seleccione productos para su pedido.</td>
                           </tr>
                         )}
                       </tbody>
@@ -444,10 +441,10 @@ const App: React.FC = () => {
               <div className="h-full flex flex-col items-center justify-center space-y-8 o-animate-fade">
                 <div className="w-24 h-24 bg-green-50 text-odoo-success rounded-[2.5rem] flex items-center justify-center shadow-xl border border-green-100"><Check size={48} strokeWidth={3}/></div>
                 <div className="text-center space-y-3">
-                  <h2 className="text-4xl font-black text-gray-800 tracking-tight uppercase">¡BORRADOR GENERADO!</h2>
-                  <p className="text-gray-400 font-bold text-sm max-w-sm mx-auto uppercase tracking-widest text-center">La Transferencia Interna ha sido registrada en Odoo como borrador desde PRINCIPAL1.</p>
+                  <h2 className="text-4xl font-black text-gray-800 tracking-tight uppercase">¡PEDIDO REGISTRADO!</h2>
+                  <p className="text-gray-400 font-bold text-sm max-w-sm mx-auto uppercase tracking-widest text-center">La solicitud ha sido enviada exitosamente al sistema de abastecimiento central.</p>
                 </div>
-                <button onClick={() => setOrderComplete(false)} className="o-btn-primary px-12 py-4 rounded-2xl shadow-xl font-black text-xs tracking-widest uppercase">Generar Nueva Transferencia</button>
+                <button onClick={() => setOrderComplete(false)} className="o-btn-primary px-12 py-4 rounded-2xl shadow-xl font-black text-xs tracking-widest uppercase">Generar Nuevo Pedido</button>
               </div>
             )}
 

@@ -6,7 +6,8 @@ import {
   Check, Store, ClipboardList, Activity, X, MoreVertical, Layers, 
   ArrowRightLeft, Package, Home, Building, Truck, MoveHorizontal, Info, AlertTriangle,
   Clock, CheckCircle2, xCircle, TrendingUp, CreditCard, Wallet, Banknote, ShoppingBag,
-  DollarSign, PieChart, Filter, Download, FileSpreadsheet, Calendar, Users, ListFilter
+  DollarSign, PieChart, Filter, Download, FileSpreadsheet, Calendar, Users, ListFilter,
+  TrendingDown, TrendingUp as TrendingUpIcon
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { OdooClient } from './services/odooService';
@@ -80,25 +81,37 @@ const App: React.FC = () => {
 
       const configIds = filteredConfigs.map((c: any) => c.id);
 
-      // Obtener todas las sesiones en el rango
       const sessions = await client.searchRead('pos.session', 
         [['config_id', 'in', configIds], ['start_at', '>=', dateStart + ' 00:00:00'], ['start_at', '<=', dateEnd + ' 23:59:59']], 
         ['id', 'config_id', 'user_id', 'start_at', 'stop_at', 'cash_register_balance_start', 'cash_register_balance_end_real', 'state'],
         { order: 'id desc' }
       );
 
-      // Obtener todos los pedidos
       const orders = await client.searchRead('pos.order', 
         [['date_order', '>=', dateStart + ' 00:00:00'], ['date_order', '<=', dateEnd + ' 23:59:59']], 
         ['amount_total', 'session_id', 'config_id', 'payment_ids', 'user_id'],
         { limit: 3000 }
       );
 
-      // Obtener todos los pagos vinculados a esos pedidos
       const paymentIds = orders.flatMap(o => o.payment_ids);
       let payments: any[] = [];
       if (paymentIds.length > 0) {
         payments = await client.searchRead('pos.payment', [['id', 'in', paymentIds]], ['amount', 'payment_method_id', 'pos_order_id', 'session_id']);
+      }
+
+      // Obtener líneas de pedido para el análisis de productos y costos
+      const orderLines = await client.searchRead('pos.order.line', 
+        [['create_date', '>=', dateStart + ' 00:00:00'], ['create_date', '<=', dateEnd + ' 23:59:59']], 
+        ['product_id', 'qty', 'price_subtotal_incl', 'price_subtotal', 'order_id', 'session_id'],
+        { limit: 8000 }
+      );
+
+      // Obtener costos (standard_price) de los productos involucrados
+      const uniqueProductIds = [...new Set(orderLines.map((l: any) => l.product_id[0]))];
+      let productCosts: Record<number, number> = {};
+      if (uniqueProductIds.length > 0) {
+        const costsData = await client.searchRead('product.product', [['id', 'in', uniqueProductIds]], ['id', 'standard_price']);
+        costsData.forEach((p: any) => { productCosts[p.id] = p.standard_price || 0; });
       }
 
       const stats: any = {};
@@ -106,10 +119,10 @@ const App: React.FC = () => {
         const configSessions = sessions.filter(s => s.config_id[0] === config.id);
         const latestSession = configSessions[0];
         
-        // Sesiones procesadas con sus datos internos
         const processedSessions = configSessions.map(sess => {
           const sessionOrders = orders.filter(o => o.session_id[0] === sess.id);
           const sessionPayments = payments.filter(p => p.session_id[0] === sess.id);
+          const sessionLines = orderLines.filter(l => l.session_id[0] === sess.id);
           
           const payBreakdown: any = {};
           sessionPayments.forEach(p => {
@@ -123,12 +136,42 @@ const App: React.FC = () => {
             userBreakdown[userName] = (userBreakdown[userName] || 0) + o.amount_total;
           });
 
+          // Análisis de rentabilidad por producto en esta sesión
+          const productAnalysis: any[] = [];
+          const productGroups: Record<string, any> = {};
+
+          sessionLines.forEach(l => {
+            const pid = l.product_id[0];
+            const pName = l.product_id[1];
+            if (!productGroups[pName]) {
+              productGroups[pName] = { name: pName, qty: 0, sale: 0, cost: productCosts[pid] || 0 };
+            }
+            productGroups[pName].qty += l.qty;
+            productGroups[pName].sale += l.price_subtotal_incl;
+          });
+
+          Object.values(productGroups).forEach((pg: any) => {
+            const totalCost = pg.qty * pg.cost;
+            const profit = pg.sale - totalCost;
+            const margin = pg.sale > 0 ? (profit / pg.sale) * 100 : 0;
+            productAnalysis.push({
+              'Producto': pg.name,
+              'Cantidad': pg.qty,
+              'Venta Total (S/)': pg.sale.toFixed(2),
+              'Costo Unit. (S/)': pg.cost.toFixed(2),
+              'Costo Total (S/)': totalCost.toFixed(2),
+              'Ganancia Neta (S/)': profit.toFixed(2),
+              'Margen %': margin.toFixed(1) + '%'
+            });
+          });
+
           return {
             ...sess,
             total_vta: sessionOrders.reduce((a, b) => a + b.amount_total, 0),
             order_count: sessionOrders.length,
             payments: payBreakdown,
-            users: userBreakdown
+            users: userBreakdown,
+            productAnalysis: productAnalysis
           };
         });
 
@@ -145,11 +188,7 @@ const App: React.FC = () => {
       }
       setPosSalesData(stats);
 
-      const orderLines = await client.searchRead('pos.order.line', 
-        [['create_date', '>=', dateStart + ' 00:00:00']], 
-        ['product_id', 'qty', 'price_subtotal_incl'],
-        { limit: 1000 }
-      );
+      // Best Sellers para el dashboard
       const items: any = {};
       orderLines.forEach((l: any) => {
         const pid = l.product_id[1];
@@ -166,29 +205,34 @@ const App: React.FC = () => {
     }
   }, [client, canSeeAdminTabs, reportDateStart, reportDateEnd]);
 
-  // Exportar una sesión específica
   const exportSessionExcel = (sess: any, configName: string) => {
     const wb = XLSX.utils.book_new();
     
+    // Hoja 1: Resumen
     const meta = [{
       'Sesión Odoo': sess.id,
       'Punto de Venta': configName,
-      'Apertura por': sess.user_id[1],
+      'Responsable': sess.user_id[1],
       'Inicio': sess.start_at,
-      'Cierre': sess.stop_at || 'En curso',
-      'Estado': sess.state,
-      'Venta Total Turno': sess.total_vta,
-      'Cant. Tickets': sess.order_count
+      'Venta Turno': sess.total_vta,
+      'Tickets': sess.order_count
     }];
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(meta), "Resumen Turno");
     
-    const payRows = Object.entries(sess.payments).map(([m, a]) => ({ 'Método de Pago': m, 'Monto Cobrado': a }));
+    // Hoja 2: Arqueo
+    const payRows = Object.entries(sess.payments).map(([m, a]) => ({ 'Método': m, 'Monto': a }));
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(payRows), "Arqueo de Caja");
 
-    const userRows = Object.entries(sess.users).map(([u, a]) => ({ 'Vendedor': u, 'Venta Realizada': a }));
+    // Hoja 3: Vendedores
+    const userRows = Object.entries(sess.users).map(([u, a]) => ({ 'Vendedor': u, 'Venta': a }));
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(userRows), "Ventas por Personal");
 
-    XLSX.writeFile(wb, `Turno_SJS_${sess.id}_${configName}.xlsx`);
+    // Hoja 4: DETALLE PRODUCTOS Y GANANCIAS
+    if (sess.productAnalysis) {
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sess.productAnalysis), "Análisis de Ganancias");
+    }
+
+    XLSX.writeFile(wb, `Reporte_Profit_SJS_${sess.id}_${configName}.xlsx`);
   };
 
   const exportConsolidadoExcel = () => {
@@ -199,12 +243,11 @@ const App: React.FC = () => {
         'Sede': config.name,
         'Venta Total Dia': d.day_total || 0,
         'Tickets Dia': d.day_order_count || 0,
-        'Sesiones en el periodo': d.sessions?.length || 0,
         'Estado Actual': d.isOpened ? 'ABIERTA' : 'CERRADA'
       };
     });
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Consolidado Red");
-    XLSX.writeFile(wb, `Reporte_Red_SJS_${reportDateStart}.xlsx`);
+    XLSX.writeFile(wb, `Consolidado_Red_SJS_${reportDateStart}.xlsx`);
   };
 
   const currentSessions = useMemo(() => {
@@ -478,7 +521,10 @@ const App: React.FC = () => {
                             <div className="pt-8 border-t border-gray-100 space-y-8 o-animate-fade">
                                <div className="flex justify-between items-center">
                                   <h3 className="text-sm font-black text-gray-800 uppercase tracking-widest flex items-center gap-2"><PieChart size={20} className="text-odoo-primary"/> ARQUEO TURNO</h3>
-                                  <button onClick={() => exportSessionExcel(activeSession, selectedPosConfig.name)} className="text-odoo-primary hover:text-odoo-secondary transition-colors"><Download size={20}/></button>
+                                  <button onClick={() => exportSessionExcel(activeSession, selectedPosConfig.name)} className="text-odoo-primary hover:text-odoo-secondary transition-colors group flex items-center gap-2">
+                                    <span className="text-[10px] font-black opacity-0 group-hover:opacity-100 transition-opacity uppercase">Audit Excel</span>
+                                    <Download size={20}/>
+                                  </button>
                                </div>
 
                                <div className="space-y-4">

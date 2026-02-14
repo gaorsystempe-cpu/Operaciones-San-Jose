@@ -61,22 +61,29 @@ const App: React.FC = () => {
     if (!canSeeAdminTabs) return;
     setLoading(true);
     try {
-      // 1. Obtener Cajas y filtrar las excluidas (Tienda, BOTICA CRUZ, P&P FARMA)
-      const allConfigs = await client.searchRead('pos.config', [], ['name', 'current_session_id', 'id']);
+      // 1. Obtener Configuración de POS
+      const allConfigs = await client.searchRead('pos.config', [], ['name', 'id']);
+      
+      // Filtrar estrictamente las sedes permitidas
       const filteredConfigs = allConfigs.filter((c: any) => {
         const name = c.name.toUpperCase();
-        return !name.includes('TIENDA') && !name.includes('CRUZ') && !name.includes('P&P');
+        const isExcluded = name.includes('TIENDA') || name.includes('CRUZ') || name.includes('P&P');
+        const isIncluded = name.includes('BOTICA 1') || name.includes('BOTICA 2') || name.includes('BOTICA 3') || name.includes('BOTICA 4') || name.includes('BOTICA 0') || name.includes('BOTICA B');
+        return isIncluded && !isExcluded;
       });
       setPosConfigs(filteredConfigs);
 
-      // 2. Obtener sesiones detalladas para verificar estados REALES
-      const sessionIds = filteredConfigs.filter((c: any) => c.current_session_id).map((c: any) => c.current_session_id[0]);
-      let activeSessions: any[] = [];
-      if (sessionIds.length > 0) {
-        activeSessions = await client.searchRead('pos.session', [['id', 'in', sessionIds]], ['id', 'user_id', 'start_at', 'stop_at', 'cash_register_balance_end_real', 'state']);
-      }
+      const configIds = filteredConfigs.map((c: any) => c.id);
 
-      // 3. Obtener pedidos de hoy
+      // 2. Obtener las sesiones más recientes para cada config (Abiertas y Cerradas)
+      // Buscamos las últimas 2 sesiones por config para tener el estado actual y la fecha del último cierre
+      const recentSessions = await client.searchRead('pos.session', 
+        [['config_id', 'in', configIds]], 
+        ['id', 'config_id', 'user_id', 'start_at', 'stop_at', 'cash_register_balance_end_real', 'state'],
+        { order: 'id desc', limit: 20 }
+      );
+
+      // 3. Obtener pedidos de hoy para desglose de ventas
       const today = new Date().toISOString().split('T')[0];
       const orders = await client.searchRead('pos.order', 
         [['date_order', '>=', today + ' 00:00:00']], 
@@ -84,7 +91,6 @@ const App: React.FC = () => {
         { limit: 1000 }
       );
 
-      // 4. Obtener pagos para desglose
       const paymentIds = orders.flatMap(o => o.payment_ids);
       let payments: any[] = [];
       if (paymentIds.length > 0) {
@@ -94,7 +100,11 @@ const App: React.FC = () => {
       // Procesar Estadísticas
       const stats: any = {};
       for (const config of filteredConfigs) {
-        const sess = activeSessions.find(s => s.id === (config.current_session_id?.[0]));
+        // La sesión más reciente
+        const sessionsForConfig = recentSessions.filter(s => s.config_id[0] === config.id);
+        const currentSess = sessionsForConfig[0];
+        const lastClosedSess = sessionsForConfig.find(s => s.state === 'closed');
+        
         const configOrders = orders.filter(o => o.config_id[0] === config.id);
         const configPayments = payments.filter(p => configOrders.some(o => o.id === p.pos_order_id[0]));
         
@@ -104,19 +114,21 @@ const App: React.FC = () => {
           paymentBreakdown[method] = (paymentBreakdown[method] || 0) + p.amount;
         });
 
+        const isOpened = currentSess?.state === 'opened' || currentSess?.state === 'opening_control';
+
         stats[config.id] = {
           total: configOrders.reduce((a, b) => a + b.amount_total, 0),
           orderCount: configOrders.length,
-          openedBy: sess?.user_id?.[1] || '---',
-          isOpened: sess?.state === 'opened',
-          cashBalance: sess?.cash_register_balance_end_real || 0,
+          openedBy: isOpened ? currentSess?.user_id?.[1] : '---',
+          isOpened: isOpened,
+          cashBalance: isOpened ? currentSess?.cash_register_balance_end_real : 0,
           payments: paymentBreakdown,
-          lastClosing: sess?.stop_at ? new Date(sess.stop_at).toLocaleDateString() : '---'
+          lastClosing: lastClosedSess?.stop_at ? new Date(lastClosedSess.stop_at).toLocaleDateString('es-PE') : (currentSess?.stop_at ? new Date(currentSess.stop_at).toLocaleDateString('es-PE') : '---')
         };
       }
       setPosSalesData(stats);
 
-      // 5. Productos más vendidos
+      // 4. Productos más vendidos
       const orderLines = await client.searchRead('pos.order.line', 
         [['create_date', '>=', today + ' 00:00:00']], 
         ['product_id', 'qty', 'price_subtotal_incl'],
@@ -418,7 +430,7 @@ const App: React.FC = () => {
                       <p className="text-2xl font-black text-gray-800">S/ {Number(Object.values(posSalesData).reduce((a: any, b: any) => a + (b.total || 0), 0)).toFixed(2)}</p>
                    </div>
                    <div className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm">
-                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Cajas Activas</p>
+                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Cajas Abiertas</p>
                       <p className="text-2xl font-black text-odoo-success">{posConfigs.filter(c => posSalesData[c.id]?.isOpened).length} / {posConfigs.length}</p>
                    </div>
                    <div className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm">
@@ -426,7 +438,7 @@ const App: React.FC = () => {
                       <p className="text-2xl font-black text-odoo-primary">{Object.values(posSalesData).reduce((a: number, b: any) => a + (b.orderCount || 0), 0)}</p>
                    </div>
                    <div className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm">
-                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Balance Efectivo</p>
+                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Efectivo en Red</p>
                       <p className="text-2xl font-black text-amber-500">S/ {Number(Object.values(posSalesData).reduce((a: number, b: any) => a + (b.cashBalance || 0), 0)).toFixed(2)}</p>
                    </div>
                 </div>
@@ -435,7 +447,7 @@ const App: React.FC = () => {
                   {/* Grid de Sedes */}
                   <div className="lg:col-span-2 space-y-6">
                     <h3 className="text-sm font-black text-gray-800 uppercase tracking-widest flex items-center gap-3">
-                      <LayoutGrid size={20} className="text-odoo-primary"/> MONITOREO DE BOTICAS SJS
+                      <LayoutGrid size={20} className="text-odoo-primary"/> MONITOREO EN TIEMPO REAL SJS
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                       {posConfigs.map(config => {
@@ -455,7 +467,7 @@ const App: React.FC = () => {
                             
                             <div className="space-y-4">
                                <div className="flex justify-between items-center">
-                                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Responsable</p>
+                                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Abierta por</p>
                                   <p className="text-xs font-black text-gray-700 truncate max-w-[120px]">{sales.openedBy || '---'}</p>
                                </div>
                                <div className="flex justify-between items-center">
@@ -485,15 +497,15 @@ const App: React.FC = () => {
                        <div className="bg-white p-8 rounded-[3rem] border border-gray-100 shadow-xl o-animate-fade relative overflow-hidden">
                           <div className="absolute top-0 right-0 w-32 h-32 bg-odoo-primary/5 rounded-full -mr-16 -mt-16"></div>
                           <h3 className="text-sm font-black text-gray-800 uppercase tracking-widest mb-6 flex items-center gap-2">
-                             <PieChart size={20} className="text-odoo-primary"/> ANALÍTICA DE SEDE
+                             <PieChart size={20} className="text-odoo-primary"/> AUDITORÍA DE CAJA
                           </h3>
                           <div className="space-y-6">
                              <div className="p-4 bg-gray-50 rounded-2xl">
-                                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Botica Seleccionada</p>
+                                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Botica</p>
                                 <p className="text-sm font-black text-odoo-primary uppercase">{selectedPosDetail.name}</p>
                              </div>
                              <div className="space-y-3">
-                                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Desglose de Pagos Hoy</p>
+                                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Métodos de Cobro</p>
                                 {Object.entries(posSalesData[selectedPosDetail.id]?.payments || {}).map(([method, amount]: [string, any]) => (
                                   <div key={method} className="flex justify-between items-center group">
                                      <div className="flex items-center gap-3">
@@ -504,7 +516,7 @@ const App: React.FC = () => {
                                   </div>
                                 ))}
                                 {Object.keys(posSalesData[selectedPosDetail.id]?.payments || {}).length === 0 && (
-                                  <p className="text-center py-4 text-[10px] font-black text-gray-300 uppercase italic">Sin transacciones hoy</p>
+                                  <p className="text-center py-4 text-[10px] font-black text-gray-300 uppercase italic">Sin ventas hoy</p>
                                 )}
                              </div>
                              <div className="pt-6 border-t border-gray-50 flex items-center justify-between">
@@ -519,14 +531,14 @@ const App: React.FC = () => {
                      ) : (
                        <div className="bg-gray-100/50 p-12 rounded-[3rem] border border-dashed border-gray-200 text-center space-y-4">
                           <Filter size={40} className="mx-auto text-gray-300"/>
-                          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Seleccione una botica para auditar sus pagos</p>
+                          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Seleccione una sede para auditar sus movimientos</p>
                        </div>
                      )}
 
                      {/* Ranking Global */}
                      <div className="bg-gray-900 text-white p-8 rounded-[3rem] shadow-2xl">
                         <h3 className="text-xs font-black uppercase tracking-[0.2em] mb-8 flex items-center gap-3">
-                           <TrendingUp size={20} className="text-odoo-success"/> TOP PRODUCTOS SJS
+                           <TrendingUp size={20} className="text-odoo-success"/> TOP VENTAS RED SJS
                         </h3>
                         <div className="space-y-6">
                            {bestSellers.map((item, i) => (
@@ -535,7 +547,7 @@ const App: React.FC = () => {
                                    <div className="w-9 h-9 bg-white/10 rounded-xl flex items-center justify-center text-[10px] font-black text-white group-hover:bg-odoo-success transition-all">{i+1}</div>
                                    <div className="max-w-[120px]">
                                       <p className="text-[10px] font-black uppercase truncate leading-none mb-1">{item.name}</p>
-                                      <p className="text-[9px] font-bold text-white/40 uppercase tracking-widest">{item.qty} vendidas</p>
+                                      <p className="text-[9px] font-bold text-white/40 uppercase tracking-widest">{item.qty} uds.</p>
                                    </div>
                                 </div>
                                 <p className="text-[11px] font-black text-odoo-success">S/ {Number(item.total).toFixed(2)}</p>

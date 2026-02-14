@@ -52,8 +52,15 @@ const App: React.FC = () => {
   const [selectedPosConfig, setSelectedPosConfig] = useState<any>(null);
   const [selectedSessionId, setSelectedSessionId] = useState<number | null>(null);
   
-  const [reportDateStart, setReportDateStart] = useState(new Date().toISOString().split('T')[0]);
-  const [reportDateEnd, setReportDateEnd] = useState(new Date().toISOString().split('T')[0]);
+  // Usar fecha local para evitar problemas de UTC en el filtro inicial
+  const getLocalDate = () => {
+    const d = new Date();
+    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+    return d.toISOString().split('T')[0];
+  };
+
+  const [reportDateStart, setReportDateStart] = useState(getLocalDate());
+  const [reportDateEnd, setReportDateEnd] = useState(getLocalDate());
 
   const client = useMemo(() => new OdooClient(config.url, config.db), [config.url, config.db]);
 
@@ -71,8 +78,8 @@ const App: React.FC = () => {
     const dateEnd = end || reportDateEnd;
 
     try {
-      // 1. Obtener Configuraciones de POS habilitadas
-      const allConfigs = await client.searchRead('pos.config', [], ['name', 'id']);
+      // 1. Obtener Configuraciones de POS con su ID de sesión actual (estado real de Odoo)
+      const allConfigs = await client.searchRead('pos.config', [], ['name', 'id', 'current_session_id', 'current_session_state']);
       const filteredConfigs = allConfigs.filter((c: any) => {
         const name = c.name.toUpperCase();
         return (name.includes('BOTICA 1') || name.includes('BOTICA 2') || name.includes('BOTICA 3') || name.includes('BOTICA 4') || name.includes('BOTICA 0') || name.includes('BOTICA B')) &&
@@ -81,34 +88,29 @@ const App: React.FC = () => {
       setPosConfigs(filteredConfigs);
       const configIds = filteredConfigs.map((c: any) => c.id);
 
-      // 2. OBTENER ESTADO REAL: Sesiones abiertas actualmente (sin importar fecha)
-      const openSessions = await client.searchRead('pos.session', 
-        [['config_id', 'in', configIds], ['state', '=', 'opened']], 
-        ['id', 'config_id', 'user_id', 'start_at', 'state']
-      );
+      // 2. Obtener sesiones cerradas en el periodo + las sesiones abiertas actuales
+      const activeSessionIds = filteredConfigs
+        .map(c => c.current_session_id ? c.current_session_id[0] : null)
+        .filter(id => id !== null);
 
-      // 3. OBTENER TURNOS DEL PERIODO: Sesiones en el rango de fechas
       const periodSessions = await client.searchRead('pos.session', 
-        [['config_id', 'in', configIds], ['start_at', '>=', dateStart + ' 00:00:00'], ['start_at', '<=', dateEnd + ' 23:59:59']], 
+        ['|', ['id', 'in', activeSessionIds], '&', ['config_id', 'in', configIds], '&', ['start_at', '>=', dateStart + ' 00:00:00'], ['start_at', '<=', dateEnd + ' 23:59:59']], 
         ['id', 'config_id', 'user_id', 'start_at', 'stop_at', 'cash_register_balance_start', 'cash_register_balance_end_real', 'state'],
         { order: 'id desc' }
       );
+      const allSessionIds = periodSessions.map(s => s.id);
 
-      // Combinar para tener una lista única de sesiones relevantes
-      const allRelevantSessions = [...periodSessions];
-      openSessions.forEach(os => {
-        if (!allRelevantSessions.find(s => s.id === os.id)) allRelevantSessions.push(os);
-      });
-      const sessionIds = allRelevantSessions.map(s => s.id);
+      // 3. Obtener Pedidos vinculados a todas estas sesiones
+      let orders: any[] = [];
+      if (allSessionIds.length > 0) {
+        orders = await client.searchRead('pos.order', 
+          [['session_id', 'in', allSessionIds]], 
+          ['amount_total', 'session_id', 'config_id', 'payment_ids', 'user_id', 'date_order'],
+          { limit: 5000 }
+        );
+      }
 
-      // 4. OBTENER PEDIDOS: Por rango de fecha directo (Garantiza que salgan datos)
-      const orders = await client.searchRead('pos.order', 
-        [['config_id', 'in', configIds], ['date_order', '>=', dateStart + ' 00:00:00'], ['date_order', '<=', dateEnd + ' 23:59:59']], 
-        ['amount_total', 'session_id', 'config_id', 'payment_ids', 'user_id', 'date_order'],
-        { limit: 3000 }
-      );
-
-      // 5. Pagos y Líneas (solo si hay pedidos)
+      // 4. Pagos y Líneas
       let payments: any[] = [];
       let orderLines: any[] = [];
       if (orders.length > 0) {
@@ -116,12 +118,10 @@ const App: React.FC = () => {
         if (paymentIds.length > 0) {
           payments = await client.searchRead('pos.payment', [['id', 'in', paymentIds]], ['amount', 'payment_method_id', 'pos_order_id', 'session_id']);
         }
-        
-        // Traer líneas de los pedidos del periodo para rentabilidad
         orderLines = await client.searchRead('pos.order.line', 
           [['order_id', 'in', orders.map(o => o.id)]], 
           ['product_id', 'qty', 'price_subtotal_incl', 'price_subtotal', 'order_id', 'session_id'],
-          { limit: 8000 }
+          { limit: 10000 }
         );
       }
 
@@ -134,11 +134,14 @@ const App: React.FC = () => {
 
       const stats: any = {};
       for (const config of filteredConfigs) {
-        const configOrders = orders.filter(o => o.config_id[0] === config.id);
-        const configOpenSession = openSessions.find(s => s.config_id[0] === config.id);
-        const configPeriodSessions = periodSessions.filter(s => s.config_id[0] === config.id);
+        // Determinar si está abierta según la configuración del POS (más fiable)
+        const isOnline = config.current_session_state === 'opened' || config.current_session_state === 'opening_control';
+        const currentSessionId = config.current_session_id ? config.current_session_id[0] : null;
         
-        const processedSessions = configPeriodSessions.map(sess => {
+        const configSessions = periodSessions.filter(s => s.config_id[0] === config.id);
+        const latestSession = configSessions[0];
+
+        const processedSessions = configSessions.map(sess => {
           const sOrders = orders.filter(o => o.session_id[0] === sess.id);
           const sPayments = payments.filter(p => p.session_id[0] === sess.id);
           const sLines = orderLines.filter(l => l.session_id[0] === sess.id);
@@ -189,20 +192,24 @@ const App: React.FC = () => {
           };
         });
 
+        // Filtrar órdenes que pertenezcan a las sesiones del periodo para esta config
+        const relevantConfigSessionIds = configSessions.map(s => s.id);
+        const configPeriodOrders = orders.filter(o => relevantConfigSessionIds.includes(o.session_id[0]));
+
         stats[config.id] = {
-          day_total: configOrders.reduce((a, b) => a + b.amount_total, 0),
-          day_order_count: configOrders.length,
-          isOpened: !!configOpenSession,
-          openedBy: configOpenSession ? configOpenSession.user_id[1] : '---',
-          cashBalance: configPeriodSessions[0]?.cash_register_balance_end_real || 0,
+          day_total: configPeriodOrders.reduce((a, b) => a + b.amount_total, 0),
+          day_order_count: configPeriodOrders.length,
+          isOpened: isOnline,
+          openedBy: isOnline && latestSession ? latestSession.user_id[1] : '---',
+          cashBalance: latestSession?.cash_register_balance_end_real || 0,
           sessions: processedSessions
         };
       }
       setPosSalesData(stats);
 
     } catch (e) {
-      console.error("Error diagnóstico SJS:", e);
-      setErrorLog("Error de conexión Odoo. Reintentando...");
+      console.error("Error sincronización SJS:", e);
+      setErrorLog("Fallo de red Odoo v18");
     } finally {
       setLoading(false);
     }
@@ -215,16 +222,18 @@ const App: React.FC = () => {
       { 'CAMPO': 'BOTICA', 'VALOR': configName },
       { 'CAMPO': 'RESPONSABLE', 'VALOR': sess.user_id[1] },
       { 'CAMPO': 'APERTURA', 'VALOR': sess.start_at },
-      { 'CAMPO': 'CIERRE', 'VALOR': sess.stop_at || 'ACTIVA' },
-      { 'CAMPO': 'TOTAL VENTA', 'VALOR': sess.total_vta },
+      { 'CAMPO': 'CIERRE', 'VALOR': sess.stop_at || 'TURNO ABIERTO' },
+      { 'CAMPO': 'TOTAL VENTA', 'VALOR': 'S/ ' + sess.total_vta.toFixed(2) },
+      { 'CAMPO': 'TRANSACCIONES', 'VALOR': sess.order_count },
       { 'CAMPO': '', 'VALOR': '' },
-      ...Object.entries(sess.payments).map(([m, a]) => ({ 'CAMPO': 'Pago: ' + m, 'VALOR': a }))
+      { 'CAMPO': '--- ARQUEO ---', 'VALOR': '' },
+      ...Object.entries(sess.payments).map(([m, a]) => ({ 'CAMPO': m, 'VALOR': 'S/ ' + Number(a).toFixed(2) }))
     ];
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(resumen), "Resumen Financiero");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(resumen), "Auditoría Financiera");
     if (sess.productAnalysis?.length > 0) {
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sess.productAnalysis), "Detalle Rentabilidad");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sess.productAnalysis), "Rentabilidad Detalle");
     }
-    XLSX.writeFile(wb, `Reporte_SJS_${configName}_${sess.id}.xlsx`);
+    XLSX.writeFile(wb, `Audit_SJS_${configName}_Session_${sess.id}.xlsx`);
   };
 
   const exportConsolidadoExcel = () => {
@@ -233,14 +242,14 @@ const App: React.FC = () => {
       const d = posSalesData[config.id] || {};
       return {
         'Sede': config.name,
-        'Venta Total Periodo': d.day_total || 0,
+        'Venta Acumulada Periodo': d.day_total || 0,
         'Tickets': d.day_order_count || 0,
-        'Estado': d.isOpened ? 'ABIERTA' : 'CERRADA',
-        'Responsable': d.openedBy || '---'
+        'Estado Real': d.isOpened ? 'ABIERTA' : 'CERRADA',
+        'Cajero(a)': d.openedBy || '---'
       };
     });
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Consolidado");
-    XLSX.writeFile(wb, `Consolidado_SJS_${reportDateStart}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Consolidado Red");
+    XLSX.writeFile(wb, `Consolidado_SanJose_${reportDateStart}.xlsx`);
   };
 
   const currentSessions = useMemo(() => {
@@ -423,9 +432,9 @@ const App: React.FC = () => {
                      <input type="date" value={reportDateStart} onChange={e => setReportDateStart(e.target.value)} className="bg-transparent border-none text-[11px] font-black outline-none w-28"/>
                      <span className="text-[11px] font-black opacity-30">a</span>
                      <input type="date" value={reportDateEnd} onChange={e => setReportDateEnd(e.target.value)} className="bg-transparent border-none text-[11px] font-black outline-none w-28"/>
-                     <button onClick={() => fetchPosStats()} className="p-1 hover:bg-white rounded-lg transition-all text-odoo-primary"><Search size={14}/></button>
+                     <button onClick={() => fetchPosStats()} className="p-1 hover:bg-white rounded-lg transition-all text-odoo-primary active:scale-90 transition-transform"><Search size={14}/></button>
                   </div>
-                  <button onClick={exportConsolidadoExcel} className="o-btn-secondary flex items-center gap-2 border-green-200 text-green-600 font-black text-[10px] hover:bg-green-50">
+                  <button onClick={exportConsolidadoExcel} className="o-btn-secondary flex items-center gap-2 border-green-200 text-green-600 font-black text-[10px] hover:bg-green-50 shadow-sm active:scale-95 transition-all">
                     <FileSpreadsheet size={16}/> EXPORTAR CONSOLIDADO
                   </button>
                </div>

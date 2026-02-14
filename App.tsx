@@ -49,7 +49,6 @@ const App: React.FC = () => {
   const [orderComplete, setOrderComplete] = useState(false);
   const [selectedPosDetail, setSelectedPosDetail] = useState<any>(null);
   
-  // Filtros de fecha para reportes
   const [reportDateStart, setReportDateStart] = useState(new Date().toISOString().split('T')[0]);
   const [reportDateEnd, setReportDateEnd] = useState(new Date().toISOString().split('T')[0]);
 
@@ -58,7 +57,7 @@ const App: React.FC = () => {
   const canSeeAdminTabs = useMemo(() => {
     if (!session?.email) return false;
     const email = session.email.toLowerCase();
-    return email === 'admin1@sanjose.pe' || email === 'soporte@facturaclic.pe';
+    return email === 'admin1@sanjose.pe' || email === 'soporte@facturaclic.pe' || email === 'laura@sanjose.pe';
   }, [session]);
 
   const fetchPosStats = useCallback(async (start?: string, end?: string) => {
@@ -78,14 +77,12 @@ const App: React.FC = () => {
 
       const configIds = filteredConfigs.map((c: any) => c.id);
 
-      // Obtener sesiones en el rango
       const sessions = await client.searchRead('pos.session', 
         [['config_id', 'in', configIds], ['start_at', '>=', dateStart + ' 00:00:00'], ['start_at', '<=', dateEnd + ' 23:59:59']], 
         ['id', 'config_id', 'user_id', 'start_at', 'stop_at', 'cash_register_balance_start', 'cash_register_balance_end_real', 'state'],
         { order: 'id desc' }
       );
 
-      // Obtener pedidos y pagos
       const orders = await client.searchRead('pos.order', 
         [['date_order', '>=', dateStart + ' 00:00:00'], ['date_order', '<=', dateEnd + ' 23:59:59']], 
         ['amount_total', 'session_id', 'config_id', 'payment_ids'],
@@ -98,7 +95,6 @@ const App: React.FC = () => {
         payments = await client.searchRead('pos.payment', [['id', 'in', paymentIds]], ['amount', 'payment_method_id', 'pos_order_id']);
       }
 
-      // Consolidar datos por Configuración
       const stats: any = {};
       for (const config of filteredConfigs) {
         const configSessions = sessions.filter(s => s.config_id[0] === config.id);
@@ -116,16 +112,15 @@ const App: React.FC = () => {
           total: configOrders.reduce((a, b) => a + b.amount_total, 0),
           orderCount: configOrders.length,
           isOpened: latestSession?.state === 'opened' || latestSession?.state === 'opening_control',
-          openedBy: latestSession?.user_id?.[1] || '---',
-          cashBalance: latestSession?.cash_register_balance_end_real || 0,
+          openedBy: (latestSession?.state === 'opened' || latestSession?.state === 'opening_control') ? latestSession?.user_id?.[1] : '---',
+          cashBalance: (latestSession?.state === 'opened' || latestSession?.state === 'opening_control') ? latestSession?.cash_register_balance_end_real : 0,
           payments: paymentBreakdown,
-          sessions: configSessions, // Guardamos todas las sesiones del periodo
-          lastClosing: latestSession?.stop_at ? new Date(latestSession.stop_at).toLocaleString() : '---'
+          sessions: configSessions,
+          lastClosing: latestSession?.stop_at ? new Date(latestSession.stop_at).toLocaleString('es-PE') : '---'
         };
       }
       setPosSalesData(stats);
 
-      // Productos más vendidos (Top 10)
       const orderLines = await client.searchRead('pos.order.line', 
         [['create_date', '>=', dateStart + ' 00:00:00']], 
         ['product_id', 'qty', 'price_subtotal_incl'],
@@ -147,14 +142,10 @@ const App: React.FC = () => {
     }
   }, [client, canSeeAdminTabs, reportDateStart, reportDateEnd]);
 
-  // Función para exportar un Excel profesional de una Sede específica
   const exportSedeExcel = (config: any) => {
     const data = posSalesData[config.id];
     if (!data) return;
-
     const wb = XLSX.utils.book_new();
-    
-    // Hoja 1: Resumen de Sesiones
     const sessionData = data.sessions.map((s: any) => ({
       'ID Sesión': s.id,
       'Responsable': s.user_id[1],
@@ -165,21 +156,11 @@ const App: React.FC = () => {
       'Balance Final Real': s.cash_register_balance_end_real,
       'Diferencia': s.cash_register_balance_end_real - s.cash_register_balance_start
     }));
-    const wsSessions = XLSX.utils.json_to_sheet(sessionData);
-    XLSX.utils.book_append_sheet(wb, wsSessions, "Detalle de Sesiones");
-
-    // Hoja 2: Métodos de Pago
-    const paymentData = Object.entries(data.payments).map(([method, amount]) => ({
-      'Método de Pago': method,
-      'Monto Total': amount
-    }));
-    const wsPayments = XLSX.utils.json_to_sheet(paymentData);
-    XLSX.utils.book_append_sheet(wb, wsPayments, "Resumen de Pagos");
-
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sessionData), "Detalle de Sesiones");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(Object.entries(data.payments).map(([m, a]) => ({'Método': m, 'Monto': a}))), "Pagos");
     XLSX.writeFile(wb, `Reporte_SJS_${config.name}_${reportDateStart}.xlsx`);
   };
 
-  // Función para exportar un Excel consolidado de toda la red
   const exportConsolidadoExcel = () => {
     const wb = XLSX.utils.book_new();
     const rows = posConfigs.map(config => {
@@ -194,15 +175,8 @@ const App: React.FC = () => {
         'Último Cierre': d.lastClosing
       };
     });
-
-    const ws = XLSX.utils.json_to_sheet(rows);
-    XLSX.utils.book_append_sheet(wb, ws, "Consolidado de Ventas");
-    
-    // Añadir Top Productos
-    const wsTop = XLSX.utils.json_to_sheet(bestSellers.map(b => ({ 'Producto': b.name, 'Cantidad': b.qty, 'Monto Total': b.total })));
-    XLSX.utils.book_append_sheet(wb, wsTop, "Top Productos Red");
-
-    XLSX.writeFile(wb, `Consolidado_SJS_Red_${reportDateStart}_al_${reportDateEnd}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Consolidado Red");
+    XLSX.writeFile(wb, `Consolidado_SJS_Red_${reportDateStart}.xlsx`);
   };
 
   const fetchMyRequests = useCallback(async (userId: number) => {
@@ -215,6 +189,49 @@ const App: React.FC = () => {
       setMyRequests(pickings);
     } catch (e) { console.error(e); }
   }, [client]);
+
+  const fetchProducts = useCallback(async () => {
+    if (!principal1?.lot_stock_id) return;
+    setLoading(true);
+    try {
+      const pData = await client.searchRead('product.product', 
+        [['active', '=', true], ['type', '=', 'product']], 
+        ['name', 'default_code', 'qty_available', 'uom_id'], 
+        { limit: 500, context: { location: principal1.lot_stock_id[0], compute_child_locations: false } }
+      );
+      setProducts(pData.filter((p: any) => p.qty_available > 0));
+    } catch (e: any) {
+      setErrorLog("Error stock: " + e.message);
+    } finally { setLoading(false); }
+  }, [client, principal1]);
+
+  const submitToOdoo = async () => {
+    if (!cart.length || !selectedWarehouseId || !session) return;
+    setLoading(true);
+    try {
+      const warehouseDest = warehouses.find(w => w.id === selectedWarehouseId);
+      const pickingData = {
+        picking_type_id: internalPickingTypeId,
+        location_id: principal1.lot_stock_id[0], 
+        location_dest_id: warehouseDest.lot_stock_id[0], 
+        origin: `App SJS - ${session.name}`,
+        note: customNotes,
+        company_id: session.company_id,
+        move_ids_without_package: cart.map(item => [0, 0, {
+          name: item.name,
+          product_id: item.id,
+          product_uom_qty: item.qty,
+          product_uom: item.uom_id ? item.uom_id[0] : 1,
+          location_id: principal1.lot_stock_id[0],
+          location_dest_id: warehouseDest.lot_stock_id[0],
+        }])
+      };
+      await client.create('stock.picking', pickingData);
+      setCart([]);
+      setOrderComplete(true);
+      await fetchMyRequests(session.odoo_user_id);
+    } catch (e: any) { setErrorLog(e.message); } finally { setLoading(false); }
+  };
 
   const loadAppData = useCallback(async (uid: number, companyId: number, odooUserId: number) => {
     setLoading(true);
@@ -233,9 +250,7 @@ const App: React.FC = () => {
       }
       await fetchMyRequests(odooUserId);
       if (canSeeAdminTabs) await fetchPosStats();
-    } catch (e: any) {
-      setErrorLog("Error de conexión: " + e.message);
-    } finally { setLoading(false); }
+    } catch (e: any) { setErrorLog(e.message); } finally { setLoading(false); }
   }, [client, config.apiKey, fetchMyRequests, canSeeAdminTabs, fetchPosStats]);
 
   const handleInitialAuth = async (e: React.FormEvent) => {
@@ -246,14 +261,25 @@ const App: React.FC = () => {
     try {
       const adminUid = await client.authenticate(config.user, config.apiKey);
       const companies = await client.searchRead('res.company', [['name', '=', config.companyName]], ['id', 'name'], { limit: 1 });
-      const userSearch = await client.searchRead('res.users', [['login', '=', loginInput]], ['id', 'name', 'login', 'email'], { limit: 1 });
-      if (!userSearch.length) throw new Error("Usuario no encontrado.");
+      const userSearch = await client.searchRead('res.users', [
+        '|', ['login', '=', loginInput], ['name', 'ilike', loginInput]
+      ], ['id', 'name', 'login', 'email'], { limit: 1 });
+      if (!userSearch.length) throw new Error("Usuario no reconocido.");
       const user = userSearch[0];
       const sessionData = { id: adminUid, odoo_user_id: user.id, name: user.name, email: user.email, company_id: companies[0]?.id, company_name: config.companyName };
       setSession(sessionData);
       await loadAppData(adminUid, sessionData.company_id, user.id);
       setView('app');
     } catch (e: any) { setErrorLog(e.message); } finally { setLoading(false); }
+  };
+
+  const getStatusColor = (state: string) => {
+    switch (state) {
+      case 'done': return 'bg-green-100 text-green-600';
+      case 'cancel': return 'bg-red-100 text-red-600';
+      case 'assigned': return 'bg-purple-100 text-purple-600';
+      default: return 'bg-gray-100 text-gray-600';
+    }
   };
 
   if (view === 'login') {
@@ -313,7 +339,9 @@ const App: React.FC = () => {
         <div className="flex-1 flex flex-col overflow-hidden">
           <header className="h-20 bg-white border-b border-gray-100 px-8 flex items-center justify-between shrink-0">
              <div>
-                <h2 className="text-xl font-black text-gray-800 uppercase tracking-tight">{activeTab === 'sedes' ? 'Inteligencia de Red SJS' : 'Dashboard Operativo'}</h2>
+                <h2 className="text-xl font-black text-gray-800 uppercase tracking-tight">
+                  {activeTab === 'sedes' ? 'Inteligencia de Red SJS' : activeTab === 'purchase' ? 'Generar Solicitud' : activeTab === 'requests' ? 'Seguimiento de Pedidos' : 'Dashboard Operativo'}
+                </h2>
                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Estado en Tiempo Real SJS</p>
              </div>
              {activeTab === 'sedes' && (
@@ -333,7 +361,89 @@ const App: React.FC = () => {
           </header>
 
           <main className="flex-1 overflow-y-auto p-8 custom-scrollbar">
-            {activeTab === 'sedes' && (
+            {activeTab === 'dashboard' && (
+              <div className="max-w-5xl mx-auto space-y-8 o-animate-fade">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="bg-white p-8 rounded-[2rem] border border-gray-100 shadow-sm flex flex-col gap-4">
+                    <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center"><ClipboardList size={24}/></div>
+                    <div><p className="text-2xl font-black text-gray-800">{myRequests.length}</p><p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Mis Solicitudes</p></div>
+                  </div>
+                </div>
+                <div className="bg-odoo-primary text-white p-12 rounded-[3rem] shadow-xl relative overflow-hidden">
+                  <h3 className="text-2xl font-black uppercase tracking-tight mb-2">Abastecimiento SJS</h3>
+                  <p className="text-sm opacity-80 max-w-md font-medium mb-6">Gestiona tus pedidos de stock y monitorea el estado de tus transferencias desde la central PRINCIPAL1.</p>
+                  <button onClick={() => setActiveTab('purchase')} className="bg-white text-odoo-primary px-8 py-3 rounded-2xl font-black text-xs uppercase hover:scale-105 transition-transform">Crear Nuevo Pedido</button>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'purchase' && !orderComplete && (
+              <div className="max-w-5xl mx-auto bg-white p-12 rounded-[3rem] shadow-sm border border-gray-100 o-animate-fade">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-12 mb-12">
+                  <div>
+                    <label className="text-[10px] font-black text-odoo-primary uppercase tracking-widest mb-2 block">Sede de Destino</label>
+                    <select className="w-full bg-gray-50 border-none rounded-2xl p-4 font-black text-sm outline-none appearance-none" value={selectedWarehouseId} onChange={e => setSelectedWarehouseId(Number(e.target.value))}>
+                      <option value="">-- SELECCIONE BOTICA --</option>
+                      {warehouses.filter(w => w.id !== principal1?.id).map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black text-odoo-primary uppercase tracking-widest mb-2 block">Nota Adicional</label>
+                    <input type="text" className="w-full bg-gray-50 border-none rounded-2xl p-4 font-bold text-sm outline-none" placeholder="Urgente, reposición, etc..." value={customNotes} onChange={e => setCustomNotes(e.target.value)} />
+                  </div>
+                </div>
+                <div className="space-y-6">
+                  <div className="flex justify-between items-center border-b border-gray-100 pb-4">
+                    <h3 className="text-[11px] font-black uppercase text-odoo-primary tracking-widest">Productos del Pedido</h3>
+                    <button onClick={() => { fetchProducts(); setShowProductModal(true); }} className="bg-odoo-primary text-white px-6 py-2.5 rounded-2xl text-[10px] font-black flex items-center gap-2 hover:brightness-110 shadow-lg transition-all"><Plus size={18}/> AGREGAR PRODUCTO</button>
+                  </div>
+                  <div className="space-y-3">
+                    {cart.map((item, idx) => (
+                      <div key={idx} className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl">
+                        <div>
+                          <p className="font-black text-sm text-gray-800 uppercase">{item.name}</p>
+                          <p className="text-[9px] font-bold text-gray-400 uppercase">REF: {item.default_code || 'S/REF'}</p>
+                        </div>
+                        <div className="flex items-center gap-6">
+                          <input type="number" className="w-20 text-center bg-white border-none rounded-xl p-2 font-black text-lg outline-none" value={item.qty} min="1" onChange={(e) => setCart(cart.map((c, i) => i === idx ? {...c, qty: parseInt(e.target.value) || 0} : c))} />
+                          <button onClick={() => setCart(cart.filter((_,i) => i !== idx))} className="text-gray-300 hover:text-rose-500 transition-colors"><Trash2 size={20}/></button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {cart.length > 0 && (
+                    <button onClick={submitToOdoo} disabled={loading || !selectedWarehouseId} className="w-full bg-odoo-primary text-white py-5 rounded-[2rem] font-black text-xs tracking-[0.2em] shadow-2xl mt-8">
+                      {loading ? <Loader2 className="animate-spin mx-auto" size={24}/> : 'CONFIRMAR SOLICITUD SJS'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'requests' && (
+              <div className="max-w-5xl mx-auto space-y-4 o-animate-fade">
+                {myRequests.map((req) => (
+                  <div key={req.id} className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex items-center justify-between">
+                    <div className="flex items-center gap-6">
+                      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${getStatusColor(req.state)} bg-opacity-20`}>
+                        <Package size={24}/>
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-3">
+                          <h4 className="font-black text-gray-800 text-base">{req.name}</h4>
+                          <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${getStatusColor(req.state)}`}>
+                            {req.state}
+                          </span>
+                        </div>
+                        <p className="text-[10px] font-bold text-gray-400 uppercase mt-1">Destino: {req.location_dest_id?.[1]}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {activeTab === 'sedes' && canSeeAdminTabs && (
               <div className="max-w-6xl mx-auto space-y-12 o-animate-fade pb-20">
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                    <div className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm">
@@ -346,7 +456,7 @@ const App: React.FC = () => {
                    </div>
                    <div className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm">
                       <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Cajas Activas</p>
-                      <p className="text-2xl font-black text-odoo-success">{posConfigs.filter(c => posSalesData[c.id]?.isOpened).length}</p>
+                      <p className="text-2xl font-black text-odoo-success">{posConfigs.filter(c => posSalesData[c.id]?.isOpened).length} / {posConfigs.length}</p>
                    </div>
                    <div className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm">
                       <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Efectivo Red</p>
@@ -407,15 +517,6 @@ const App: React.FC = () => {
                                   </div>
                                 ))}
                              </div>
-                             <div className="pt-6 border-t border-gray-50 space-y-4">
-                                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Últimas Sesiones</p>
-                                {posSalesData[selectedPosDetail.id]?.sessions.slice(0, 3).map((s: any) => (
-                                  <div key={s.id} className="text-[10px] p-2 bg-gray-50 rounded-lg flex justify-between">
-                                     <span>Sesión #{s.id}</span>
-                                     <span className="font-black text-odoo-primary">S/ {s.cash_register_balance_end_real.toFixed(2)}</span>
-                                  </div>
-                                ))}
-                             </div>
                           </div>
                        </div>
                      ) : (
@@ -424,29 +525,43 @@ const App: React.FC = () => {
                           <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Seleccione una sede para auditar sus sesiones</p>
                        </div>
                      )}
-
-                     <div className="bg-gray-900 text-white p-8 rounded-[3rem] shadow-2xl">
-                        <h3 className="text-xs font-black uppercase tracking-[0.2em] mb-8 flex items-center gap-3"><TrendingUp size={20} className="text-odoo-success"/> TOP VENTAS RED SJS</h3>
-                        <div className="space-y-6">
-                           {bestSellers.map((item, i) => (
-                             <div key={i} className="flex items-center justify-between">
-                                <div className="flex items-center gap-4">
-                                   <div className="w-8 h-8 bg-white/10 rounded-lg flex items-center justify-center text-[10px] font-black">{i+1}</div>
-                                   <p className="text-[10px] font-black uppercase truncate max-w-[100px]">{item.name}</p>
-                                </div>
-                                <p className="text-[11px] font-black text-odoo-success">S/ {Number(item.total).toFixed(2)}</p>
-                             </div>
-                           ))}
-                        </div>
-                     </div>
                   </div>
                 </div>
               </div>
             )}
-            {activeTab === 'dashboard' && <div className="max-w-5xl mx-auto py-20 text-center"><h3 className="text-2xl font-black text-gray-800">¡Bienvenido al Centro de Operaciones SJS!</h3><p className="text-gray-400">Seleccione una pestaña lateral para comenzar.</p></div>}
           </main>
         </div>
       </div>
+
+      {showProductModal && (
+        <div className="fixed inset-0 z-[200] bg-gray-900/60 backdrop-blur-sm flex items-center justify-center p-6">
+          <div className="bg-white w-full max-w-2xl h-[80vh] flex flex-col rounded-[3rem] shadow-2xl overflow-hidden">
+            <div className="p-8 border-b flex justify-between items-center bg-gray-50/50">
+               <h3 className="font-black text-xl text-gray-800 uppercase tracking-tight">Catálogo Central SJS</h3>
+               <button onClick={() => setShowProductModal(false)} className="p-3 bg-white rounded-2xl text-gray-300 hover:text-rose-500 transition-all"><X size={24}/></button>
+            </div>
+            <div className="px-8 py-6 bg-white border-b">
+              <input autoFocus type="text" className="w-full p-4.5 bg-gray-50 rounded-2xl focus:ring-4 focus:ring-odoo-primary/5 outline-none text-sm font-black" placeholder="Nombre o Referencia..." value={productSearch} onChange={e => setProductSearch(e.target.value)} />
+            </div>
+            <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
+              {products.filter(p => (p.name + (p.default_code || '')).toLowerCase().includes(productSearch.toLowerCase())).map(p => (
+                <button key={p.id} onClick={() => {
+                  const exists = cart.find(c => c.id === p.id);
+                  if (exists) setCart(cart.map(c => c.id === p.id ? {...c, qty: c.qty + 1} : c));
+                  else setCart([...cart, {...p, qty: 1}]);
+                  setShowProductModal(false);
+                }} className="w-full flex items-center justify-between p-5 bg-white hover:bg-odoo-primary/5 rounded-[1.5rem] border border-transparent transition-all text-left">
+                  <div>
+                    <p className="font-black text-sm text-gray-800 uppercase">{p.name}</p>
+                    <p className="text-[9px] text-gray-400 font-bold uppercase mt-1">SJS-REF: {p.default_code || 'S/REF'}</p>
+                  </div>
+                  <p className="text-sm font-black text-odoo-success">{Math.floor(p.qty_available)} uds.</p>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

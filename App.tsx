@@ -5,7 +5,7 @@ import {
   ChevronRight, AlertCircle, User as UserIcon, LayoutGrid, Loader2, Barcode, 
   Check, Store, ClipboardList, Activity, X, MoreVertical, Layers, 
   ArrowRightLeft, Package, Home, Building, Truck, MoveHorizontal, Info, AlertTriangle,
-  Clock, CheckCircle2, xCircle
+  Clock, CheckCircle2, xCircle, TrendingUp, CreditCard, Wallet, Banknote, ShoppingBag
 } from 'lucide-react';
 import { OdooClient } from './services/odooService';
 import { AppConfig, Warehouse, Employee, Product } from './types';
@@ -27,6 +27,9 @@ const App: React.FC = () => {
   const [view, setView] = useState<'login' | 'app'>('login');
   const [session, setSession] = useState<any | null>(null);
   const [warehouses, setWarehouses] = useState<any[]>([]);
+  const [posConfigs, setPosConfigs] = useState<any[]>([]);
+  const [posSalesData, setPosSalesData] = useState<any>({});
+  const [bestSellers, setBestSellers] = useState<any[]>([]);
   const [principal1, setPrincipal1] = useState<any | null>(null);
   const [internalPickingTypeId, setInternalPickingTypeId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<string>('dashboard');
@@ -45,6 +48,65 @@ const App: React.FC = () => {
   const [orderComplete, setOrderComplete] = useState(false);
   
   const client = useMemo(() => new OdooClient(config.url, config.db), [config.url, config.db]);
+
+  const canSeeAdminTabs = useMemo(() => {
+    if (!session?.email) return false;
+    const email = session.email.toLowerCase();
+    return email === 'admin1@sanjose.pe' || email === 'soporte@facturaclic.pe';
+  }, [session]);
+
+  const fetchPosStats = useCallback(async () => {
+    if (!canSeeAdminTabs) return;
+    setLoading(true);
+    try {
+      // 1. Obtener Cajas
+      const configs = await client.searchRead('pos.config', [], ['name', 'current_session_id', 'id']);
+      setPosConfigs(configs);
+
+      // 2. Obtener pedidos de hoy para estadísticas
+      const today = new Date().toISOString().split('T')[0];
+      const orders = await client.searchRead('pos.order', 
+        [['date_order', '>=', today + ' 00:00:00']], 
+        ['amount_total', 'session_id', 'config_id', 'lines', 'payment_ids'],
+        { limit: 1000 }
+      );
+
+      // Agrupar ventas por config_id
+      const stats: any = {};
+      const productCounts: any = {};
+
+      for (const order of orders) {
+        const cid = order.config_id[0];
+        if (!stats[cid]) stats[cid] = { total: 0, orders: 0, payments: {} };
+        stats[cid].total += order.amount_total;
+        stats[cid].orders += 1;
+      }
+      setPosSalesData(stats);
+
+      // 3. Mejores productos (Top 5 simplificado)
+      // Nota: En un entorno real se harían más llamadas o un read_group, aquí simulamos el impacto
+      const orderLines = await client.searchRead('pos.order.line', 
+        [['create_date', '>=', today + ' 00:00:00']], 
+        ['product_id', 'qty', 'price_subtotal_incl'],
+        { limit: 500 }
+      );
+
+      const items: any = {};
+      orderLines.forEach((l: any) => {
+        const pid = l.product_id[1];
+        if (!items[pid]) items[pid] = { name: pid, qty: 0, total: 0 };
+        items[pid].qty += l.qty;
+        items[pid].total += l.price_subtotal_incl;
+      });
+
+      setBestSellers(Object.values(items).sort((a: any, b: any) => b.qty - a.qty).slice(0, 5));
+
+    } catch (e) {
+      console.error("Error en analítica POS:", e);
+    } finally {
+      setLoading(false);
+    }
+  }, [client, canSeeAdminTabs]);
 
   const fetchMyRequests = useCallback(async (userId: number) => {
     try {
@@ -79,12 +141,14 @@ const App: React.FC = () => {
       }
       
       await fetchMyRequests(odooUserId);
+      if (canSeeAdminTabs) await fetchPosStats();
+      
       setSyncStatus('online');
     } catch (e: any) {
       setErrorLog("Error de conexión: " + e.message);
       setSyncStatus('offline');
     } finally { setLoading(false); }
-  }, [client, config.apiKey, fetchMyRequests]);
+  }, [client, config.apiKey, fetchMyRequests, canSeeAdminTabs, fetchPosStats]);
 
   const handleInitialAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -249,16 +313,20 @@ const App: React.FC = () => {
             <p className="text-xs font-bold text-gray-400">Sede Central: {principal1?.name || '...'}</p>
           </div>
           <nav className="p-4 space-y-1 flex-1">
-            {[
-              { id: 'dashboard', icon: Home, label: 'Inicio' },
-              { id: 'purchase', icon: Plus, label: 'Nuevo Pedido' },
-              { id: 'requests', icon: ClipboardList, label: 'Mis Solicitudes' },
-              { id: 'sedes', icon: Store, label: 'Sedes SJS' }
-            ].map(item => (
-              <button key={item.id} onClick={() => setActiveTab(item.id)} className={`w-full flex items-center gap-4 p-4 rounded-2xl text-[13px] font-black transition-all ${activeTab === item.id ? 'bg-odoo-primary/5 text-odoo-primary shadow-sm' : 'text-gray-400 hover:bg-gray-50'}`}>
-                <item.icon size={20}/> {item.label}
+            <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center gap-4 p-4 rounded-2xl text-[13px] font-black transition-all ${activeTab === 'dashboard' ? 'bg-odoo-primary/5 text-odoo-primary shadow-sm' : 'text-gray-400 hover:bg-gray-50'}`}>
+              <Home size={20}/> Inicio
+            </button>
+            <button onClick={() => setActiveTab('purchase')} className={`w-full flex items-center gap-4 p-4 rounded-2xl text-[13px] font-black transition-all ${activeTab === 'purchase' ? 'bg-odoo-primary/5 text-odoo-primary shadow-sm' : 'text-gray-400 hover:bg-gray-50'}`}>
+              <Plus size={20}/> Nuevo Pedido
+            </button>
+            <button onClick={() => setActiveTab('requests')} className={`w-full flex items-center gap-4 p-4 rounded-2xl text-[13px] font-black transition-all ${activeTab === 'requests' ? 'bg-odoo-primary/5 text-odoo-primary shadow-sm' : 'text-gray-400 hover:bg-gray-50'}`}>
+              <ClipboardList size={20}/> Mis Solicitudes
+            </button>
+            {canSeeAdminTabs && (
+              <button onClick={() => { setActiveTab('sedes'); fetchPosStats(); }} className={`w-full flex items-center gap-4 p-4 rounded-2xl text-[13px] font-black transition-all ${activeTab === 'sedes' ? 'bg-odoo-primary/5 text-odoo-primary shadow-sm' : 'text-gray-400 hover:bg-gray-50'}`}>
+                <Store size={20}/> Red de Sedes
               </button>
-            ))}
+            )}
           </nav>
           <div className="p-6 bg-gray-50/50">
              <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-widest text-odoo-success">
@@ -272,11 +340,11 @@ const App: React.FC = () => {
           <header className="h-20 bg-white border-b border-gray-100 px-8 flex items-center justify-between shrink-0">
             <div>
               <h2 className="text-xl font-black text-gray-800 uppercase tracking-tight">
-                {activeTab === 'dashboard' ? `Hola, ${session.name.split(' ')[0]}` : activeTab === 'purchase' ? 'Generar Solicitud' : activeTab === 'requests' ? 'Seguimiento de Pedidos' : 'Red de Sedes'}
+                {activeTab === 'dashboard' ? `Hola, ${session.name.split(' ')[0]}` : activeTab === 'purchase' ? 'Generar Solicitud' : activeTab === 'requests' ? 'Seguimiento de Pedidos' : 'Control de Sedes (Real-Time)'}
               </h2>
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Portal del Empleado San José</p>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Boticas San José S.A.C.</p>
             </div>
-            <button onClick={() => { loadAppData(session.id, session.company_id, session.odoo_user_id); if(activeTab === 'purchase') fetchProducts(); }} className="o-btn-secondary flex items-center gap-2 border-gray-100 font-black text-[10px]">
+            <button onClick={() => { loadAppData(session.id, session.company_id, session.odoo_user_id); if(activeTab === 'sedes') fetchPosStats(); }} className="o-btn-secondary flex items-center gap-2 border-gray-100 font-black text-[10px]">
               <RefreshCw size={14} className={loading ? 'animate-spin' : ''}/> ACTUALIZAR
             </button>
           </header>
@@ -287,7 +355,7 @@ const App: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div className="bg-white p-8 rounded-[2rem] border border-gray-100 shadow-sm flex flex-col gap-4">
                     <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center"><ClipboardList size={24}/></div>
-                    <div><p className="text-2xl font-black text-gray-800">{myRequests.length}</p><p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Solicitudes Totales</p></div>
+                    <div><p className="text-2xl font-black text-gray-800">{myRequests.length}</p><p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Mis Solicitudes</p></div>
                   </div>
                   <div className="bg-white p-8 rounded-[2rem] border border-gray-100 shadow-sm flex flex-col gap-4">
                     <div className="w-12 h-12 bg-green-50 text-green-600 rounded-2xl flex items-center justify-center"><CheckCircle2 size={24}/></div>
@@ -295,15 +363,107 @@ const App: React.FC = () => {
                   </div>
                   <div className="bg-white p-8 rounded-[2rem] border border-gray-100 shadow-sm flex flex-col gap-4">
                     <div className="w-12 h-12 bg-orange-50 text-orange-600 rounded-2xl flex items-center justify-center"><Clock size={24}/></div>
-                    <div><p className="text-2xl font-black text-gray-800">{myRequests.filter(r => r.state !== 'done' && r.state !== 'cancel').length}</p><p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">En Proceso</p></div>
+                    <div><p className="text-2xl font-black text-gray-800">{myRequests.filter(r => r.state !== 'done' && r.state !== 'cancel').length}</p><p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Pendientes</p></div>
                   </div>
                 </div>
                 <div className="bg-odoo-primary text-white p-12 rounded-[3rem] shadow-xl relative overflow-hidden">
                   <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -mr-20 -mt-20"></div>
                   <div className="relative z-10 space-y-4">
-                    <h3 className="text-2xl font-black uppercase tracking-tight">Abastecimiento Rápido SJS</h3>
-                    <p className="text-sm opacity-80 max-w-md font-medium">Usa este portal para solicitar medicamentos a la Central (PRINCIPAL1). El sistema generará automáticamente la transferencia interna en Odoo.</p>
+                    <h3 className="text-2xl font-black uppercase tracking-tight">Portal de Operaciones SJS</h3>
+                    <p className="text-sm opacity-80 max-w-md font-medium">Gestiona tus pedidos de stock y monitorea el estado de tus transferencias desde la central PRINCIPAL1.</p>
                     <button onClick={() => setActiveTab('purchase')} className="bg-white text-odoo-primary px-8 py-3 rounded-2xl font-black text-xs uppercase hover:scale-105 transition-transform">Crear Nuevo Pedido</button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'sedes' && canSeeAdminTabs && (
+              <div className="max-w-6xl mx-auto space-y-12 o-animate-fade">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                  <div className="lg:col-span-2 space-y-6">
+                    <div className="flex items-center justify-between mb-2">
+                       <h3 className="text-sm font-black text-gray-800 uppercase tracking-widest flex items-center gap-2"><Activity size={18} className="text-odoo-primary"/> ESTADO DE CAJAS</h3>
+                       <span className="text-[10px] font-bold text-gray-400 uppercase">Hoy: {new Date().toLocaleDateString()}</span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {posConfigs.map(config => {
+                        const sales = posSalesData[config.id] || { total: 0, orders: 0 };
+                        const isOnline = !!config.current_session_id;
+                        return (
+                          <div key={config.id} className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm hover:border-odoo-primary/20 transition-all group">
+                            <div className="flex justify-between items-start mb-4">
+                              <div className="flex items-center gap-3">
+                                <div className={`w-3 h-3 rounded-full ${isOnline ? 'bg-odoo-success animate-pulse' : 'bg-gray-300'}`}></div>
+                                <h4 className="font-black text-gray-800 uppercase text-sm">{config.name}</h4>
+                              </div>
+                              <span className={`text-[9px] font-black px-2 py-1 rounded-lg uppercase ${isOnline ? 'bg-green-50 text-green-600' : 'bg-gray-50 text-gray-400'}`}>
+                                {isOnline ? 'En Línea' : 'Cerrada'}
+                              </span>
+                            </div>
+                            <div className="flex items-end justify-between">
+                               <div>
+                                  <p className="text-[10px] font-bold text-gray-300 uppercase">Venta del Día</p>
+                                  <p className="text-xl font-black text-gray-800">S/ {sales.total.toFixed(2)}</p>
+                               </div>
+                               <div className="text-right">
+                                  <p className="text-[10px] font-bold text-gray-300 uppercase">Tickets</p>
+                                  <p className="text-sm font-black text-odoo-primary">{sales.orders}</p>
+                               </div>
+                            </div>
+                            <div className="mt-4 pt-4 border-t border-gray-50 flex gap-2">
+                               <div className="p-2 bg-gray-50 rounded-xl text-odoo-primary group-hover:bg-odoo-primary group-hover:text-white transition-all"><Banknote size={14}/></div>
+                               <div className="p-2 bg-gray-50 rounded-xl text-blue-500 group-hover:bg-blue-500 group-hover:text-white transition-all"><CreditCard size={14}/></div>
+                               <div className="p-2 bg-gray-50 rounded-xl text-purple-500 group-hover:bg-purple-500 group-hover:text-white transition-all"><Wallet size={14}/></div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="space-y-8">
+                     <div className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm">
+                        <h3 className="text-[11px] font-black text-gray-800 uppercase tracking-widest mb-6 flex items-center gap-2"><TrendingUp size={18} className="text-odoo-success"/> LOS MÁS VENDIDOS</h3>
+                        <div className="space-y-6">
+                           {bestSellers.map((item, i) => (
+                             <div key={i} className="flex items-center justify-between group">
+                                <div className="flex items-center gap-4">
+                                   <div className="w-10 h-10 bg-gray-50 rounded-xl flex items-center justify-center text-xs font-black text-gray-400 group-hover:bg-odoo-primary/10 group-hover:text-odoo-primary transition-all">#{i+1}</div>
+                                   <div className="max-w-[140px]">
+                                      <p className="text-[11px] font-black text-gray-700 uppercase truncate">{item.name}</p>
+                                      <p className="text-[9px] font-bold text-gray-400 uppercase">{item.qty} uds.</p>
+                                   </div>
+                                </div>
+                                <div className="text-right">
+                                   <p className="text-[11px] font-black text-odoo-primary">S/ {item.total.toFixed(2)}</p>
+                                </div>
+                             </div>
+                           ))}
+                           {bestSellers.length === 0 && (
+                             <p className="text-center py-10 text-[10px] font-black text-gray-300 uppercase italic">Sin datos de hoy</p>
+                           )}
+                        </div>
+                     </div>
+
+                     <div className="bg-odoo-primary p-8 rounded-[2.5rem] text-white shadow-xl shadow-odoo-primary/20">
+                        <div className="flex items-center gap-4 mb-6">
+                           <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center"><ShoppingBag size={24}/></div>
+                           <div>
+                              <p className="text-[10px] font-black text-white/60 uppercase tracking-widest">Venta Global</p>
+                              {/* Fix: Cast the result of reduce to number to resolve 'unknown' type error */}
+                              <p className="text-2xl font-black">S/ {(Object.values(posSalesData).reduce((a: any, b: any) => a + (b.total || 0), 0) as number).toFixed(2)}</p>
+                           </div>
+                        </div>
+                        <div className="space-y-3">
+                           <div className="flex justify-between text-[10px] font-black uppercase">
+                              <span>Tickets Totales</span>
+                              <span>{Object.values(posSalesData).reduce((a: number, b: any) => a + (b.orders || 0), 0)}</span>
+                           </div>
+                           <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+                              <div className="h-full bg-white w-3/4"></div>
+                           </div>
+                        </div>
+                     </div>
                   </div>
                 </div>
               </div>
@@ -398,7 +558,7 @@ const App: React.FC = () => {
                 <div className="w-24 h-24 bg-green-50 text-odoo-success rounded-[2.5rem] flex items-center justify-center shadow-xl border border-green-100"><Check size={48} strokeWidth={3}/></div>
                 <div className="text-center space-y-2">
                   <h2 className="text-3xl font-black text-gray-800 tracking-tight uppercase">Pedido Enviado</h2>
-                  <p className="text-gray-400 font-bold text-sm max-w-sm mx-auto text-center">Tu solicitud ha sido registrada. Puedes ver el estado en "Mis Solicitudes".</p>
+                  <p className="text-gray-400 font-bold text-sm max-w-sm mx-auto text-center">Tu solicitud ha sido registrada exitosamente.</p>
                 </div>
                 <div className="flex gap-4">
                    <button onClick={() => setOrderComplete(false)} className="o-btn-primary px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-widest">Otro Pedido</button>

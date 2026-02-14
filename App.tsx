@@ -6,7 +6,7 @@ import {
   Check, Store, ClipboardList, Activity, X, MoreVertical, Layers, 
   ArrowRightLeft, Package, Home, Building, Truck, MoveHorizontal, Info, AlertTriangle,
   Clock, CheckCircle2, xCircle, TrendingUp, CreditCard, Wallet, Banknote, ShoppingBag,
-  DollarSign, PieChart, Filter, Download, FileSpreadsheet, Calendar
+  DollarSign, PieChart, Filter, Download, FileSpreadsheet, Calendar, Users
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { OdooClient } from './services/odooService';
@@ -57,7 +57,8 @@ const App: React.FC = () => {
   const canSeeAdminTabs = useMemo(() => {
     if (!session?.email) return false;
     const email = session.email.toLowerCase();
-    return email === 'admin1@sanjose.pe' || email === 'soporte@facturaclic.pe' || email === 'laura@sanjose.pe';
+    const admins = ['admin1@sanjose.pe', 'soporte@facturaclic.pe', 'laura@sanjose.pe', 'l.saavedra@sanjose.pe'];
+    return admins.some(a => email.includes(a));
   }, [session]);
 
   const fetchPosStats = useCallback(async (start?: string, end?: string) => {
@@ -85,7 +86,7 @@ const App: React.FC = () => {
 
       const orders = await client.searchRead('pos.order', 
         [['date_order', '>=', dateStart + ' 00:00:00'], ['date_order', '<=', dateEnd + ' 23:59:59']], 
-        ['amount_total', 'session_id', 'config_id', 'payment_ids'],
+        ['amount_total', 'session_id', 'config_id', 'payment_ids', 'user_id'],
         { limit: 2000 }
       );
 
@@ -108,6 +109,12 @@ const App: React.FC = () => {
           paymentBreakdown[method] = (paymentBreakdown[method] || 0) + p.amount;
         });
 
+        const userBreakdown: any = {};
+        configOrders.forEach(o => {
+          const userName = o.user_id[1];
+          userBreakdown[userName] = (userBreakdown[userName] || 0) + o.amount_total;
+        });
+
         stats[config.id] = {
           total: configOrders.reduce((a, b) => a + b.amount_total, 0),
           orderCount: configOrders.length,
@@ -115,6 +122,7 @@ const App: React.FC = () => {
           openedBy: (latestSession?.state === 'opened' || latestSession?.state === 'opening_control') ? latestSession?.user_id?.[1] : '---',
           cashBalance: (latestSession?.state === 'opened' || latestSession?.state === 'opening_control') ? latestSession?.cash_register_balance_end_real : 0,
           payments: paymentBreakdown,
+          users: userBreakdown,
           sessions: configSessions,
           lastClosing: latestSession?.stop_at ? new Date(latestSession.stop_at).toLocaleString('es-PE') : '---'
         };
@@ -146,6 +154,8 @@ const App: React.FC = () => {
     const data = posSalesData[config.id];
     if (!data) return;
     const wb = XLSX.utils.book_new();
+    
+    // Hoja de Sesiones
     const sessionData = data.sessions.map((s: any) => ({
       'ID Sesión': s.id,
       'Responsable': s.user_id[1],
@@ -156,9 +166,17 @@ const App: React.FC = () => {
       'Balance Final Real': s.cash_register_balance_end_real,
       'Diferencia': s.cash_register_balance_end_real - s.cash_register_balance_start
     }));
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sessionData), "Detalle de Sesiones");
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(Object.entries(data.payments).map(([m, a]) => ({'Método': m, 'Monto': a}))), "Pagos");
-    XLSX.writeFile(wb, `Reporte_SJS_${config.name}_${reportDateStart}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sessionData), "Sesiones");
+    
+    // Hoja de Pagos
+    const paymentData = Object.entries(data.payments).map(([m, a]) => ({'Método de Pago': m, 'Monto': a}));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(paymentData), "Pagos");
+
+    // Hoja de Vendedores
+    const userData = Object.entries(data.users).map(([u, a]) => ({'Vendedor': u, 'Venta Total': a}));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(userData), "Vendedores");
+
+    XLSX.writeFile(wb, `Auditoria_SJS_${config.name}_${reportDateStart}.xlsx`);
   };
 
   const exportConsolidadoExcel = () => {
@@ -168,15 +186,14 @@ const App: React.FC = () => {
       return {
         'Sede': config.name,
         'Estado': d.isOpened ? 'ABIERTA' : 'CERRADA',
-        'Responsable Actual': d.openedBy,
         'Venta Total': d.total || 0,
         'Tickets': d.orderCount || 0,
         'Balance Efectivo': d.cashBalance || 0,
-        'Último Cierre': d.lastClosing
+        'Vendedores Activos': Object.keys(d.users || {}).join(', ')
       };
     });
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Consolidado Red");
-    XLSX.writeFile(wb, `Consolidado_SJS_Red_${reportDateStart}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Reporte Global Red");
+    XLSX.writeFile(wb, `Consolidado_SJS_Red_${reportDateStart}_al_${reportDateEnd}.xlsx`);
   };
 
   const fetchMyRequests = useCallback(async (userId: number) => {
@@ -482,12 +499,12 @@ const App: React.FC = () => {
                                </span>
                             </div>
                             <div className="space-y-4 cursor-pointer" onClick={() => setSelectedPosDetail(config)}>
-                               <div className="flex justify-between items-center"><p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Abierta por</p><p className="text-xs font-black text-gray-700">{sales.openedBy || '---'}</p></div>
+                               <div className="flex justify-between items-center"><p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Responsable Hoy</p><p className="text-xs font-black text-gray-700">{sales.openedBy || '---'}</p></div>
                                <div className="flex justify-between items-center"><p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Balance Efectivo</p><p className="text-sm font-black text-amber-500">S/ {Number(sales.cashBalance || 0).toFixed(2)}</p></div>
                                <div className="flex justify-between items-center pt-4 border-t border-gray-50"><p className="text-[10px] font-black text-odoo-primary uppercase tracking-widest">Venta Total</p><p className="text-lg font-black text-gray-800">S/ {Number(sales.total || 0).toFixed(2)}</p></div>
                             </div>
                             <div className="mt-6 flex items-center justify-between">
-                               <button onClick={() => exportSedeExcel(config)} className="text-[10px] font-black text-odoo-primary flex items-center gap-2 hover:underline"><Download size={14}/> EXPORTAR EXCEL</button>
+                               <button onClick={() => exportSedeExcel(config)} className="text-[10px] font-black text-odoo-primary flex items-center gap-2 hover:underline"><Download size={14}/> AUDITORÍA EXCEL</button>
                                <ChevronRight size={18} className="text-gray-300"/>
                             </div>
                           </div>
@@ -498,31 +515,62 @@ const App: React.FC = () => {
 
                   <div className="space-y-8">
                      {selectedPosDetail ? (
-                       <div className="bg-white p-8 rounded-[3rem] border border-gray-100 shadow-xl o-animate-fade">
-                          <h3 className="text-sm font-black text-gray-800 uppercase tracking-widest mb-6 flex items-center gap-2"><PieChart size={20} className="text-odoo-primary"/> AUDITORÍA DE CAJA</h3>
-                          <div className="space-y-6">
-                             <div className="p-4 bg-gray-50 rounded-2xl">
-                                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Botica Seleccionada</p>
-                                <p className="text-sm font-black text-odoo-primary uppercase">{selectedPosDetail.name}</p>
-                             </div>
-                             <div className="space-y-3">
-                                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Desglose por Métodos</p>
+                       <div className="bg-white p-8 rounded-[3rem] border border-gray-100 shadow-xl o-animate-fade space-y-8 overflow-hidden relative">
+                          <div className="absolute top-0 right-0 w-24 h-24 bg-odoo-primary/5 rounded-full -mr-12 -mt-12"></div>
+                          
+                          <section>
+                            <h3 className="text-sm font-black text-gray-800 uppercase tracking-widest mb-6 flex items-center gap-2">
+                               <PieChart size={20} className="text-odoo-primary"/> ARQUEO POR MÉTODOS
+                            </h3>
+                            <div className="space-y-3">
                                 {Object.entries(posSalesData[selectedPosDetail.id]?.payments || {}).map(([method, amount]: [string, any]) => (
-                                  <div key={method} className="flex justify-between items-center">
+                                  <div key={method} className="flex justify-between items-center group">
                                      <div className="flex items-center gap-3">
                                         {method.toLowerCase().includes('efectivo') ? <Banknote size={16} className="text-green-500"/> : <CreditCard size={16} className="text-blue-500"/>}
-                                        <span className="text-[11px] font-bold text-gray-600">{method}</span>
+                                        <span className="text-[11px] font-bold text-gray-600 group-hover:text-gray-900">{method}</span>
                                      </div>
                                      <span className="text-[11px] font-black text-gray-800">S/ {Number(amount).toFixed(2)}</span>
                                   </div>
                                 ))}
+                                {Object.keys(posSalesData[selectedPosDetail.id]?.payments || {}).length === 0 && (
+                                  <p className="text-[10px] font-bold text-gray-300 uppercase italic py-2">Sin movimientos registrados</p>
+                                )}
                              </div>
-                          </div>
+                          </section>
+
+                          <section className="pt-8 border-t border-gray-50">
+                            <h3 className="text-sm font-black text-gray-800 uppercase tracking-widest mb-6 flex items-center gap-2">
+                               <Users size={20} className="text-odoo-primary"/> VENTAS POR VENDEDOR
+                            </h3>
+                            <div className="space-y-4">
+                               {Object.entries(posSalesData[selectedPosDetail.id]?.users || {}).map(([user, amount]: [string, any]) => (
+                                 <div key={user} className="flex items-center justify-between p-3 bg-gray-50 rounded-2xl hover:bg-white border border-transparent hover:border-gray-100 transition-all">
+                                    <div className="flex items-center gap-3">
+                                       <div className="w-8 h-8 bg-odoo-primary/10 rounded-xl flex items-center justify-center text-odoo-primary">
+                                          <UserIcon size={16}/>
+                                       </div>
+                                       <p className="text-[10px] font-black text-gray-700 uppercase leading-none">{user}</p>
+                                    </div>
+                                    <p className="text-[11px] font-black text-odoo-primary">S/ {Number(amount).toFixed(2)}</p>
+                                 </div>
+                               ))}
+                               {Object.keys(posSalesData[selectedPosDetail.id]?.users || {}).length === 0 && (
+                                  <p className="text-[10px] font-bold text-gray-300 uppercase italic">Sin actividad de personal</p>
+                                )}
+                            </div>
+                          </section>
+
+                          <section className="pt-8 border-t border-gray-50">
+                             <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-gray-400">
+                                <span>Total Tickets: {posSalesData[selectedPosDetail.id]?.orderCount}</span>
+                                <span>Status: {posSalesData[selectedPosDetail.id]?.isOpened ? 'ACTIVO' : 'OFFLINE'}</span>
+                             </div>
+                          </section>
                        </div>
                      ) : (
                        <div className="bg-gray-100/50 p-12 rounded-[3rem] border border-dashed border-gray-200 text-center">
                           <Filter size={40} className="mx-auto text-gray-300 mb-4"/>
-                          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Seleccione una sede para auditar sus sesiones</p>
+                          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Seleccione una sede para auditoría detallada de usuarios y pagos</p>
                        </div>
                      )}
                   </div>

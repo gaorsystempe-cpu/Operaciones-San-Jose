@@ -36,6 +36,7 @@ const App: React.FC = () => {
   const [internalPickingTypeId, setInternalPickingTypeId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [loading, setLoading] = useState(false);
+  const [lastSync, setLastSync] = useState<string>("");
   const [errorLog, setErrorLog] = useState<string | null>(null);
   const [loginInput, setLoginInput] = useState("");
   
@@ -51,10 +52,8 @@ const App: React.FC = () => {
   const [selectedPosConfig, setSelectedPosConfig] = useState<any>(null);
   const [selectedSessionId, setSelectedSessionId] = useState<number | null>(null);
   
-  // Obtener fecha actual en formato Perú para el filtro
   const getPeruDate = () => {
     const d = new Date();
-    // Ajuste simple a UTC-5 (Perú)
     const peruTime = new Date(d.getTime() - (5 * 60 * 60 * 1000));
     return peruTime.toISOString().split('T')[0];
   };
@@ -78,7 +77,7 @@ const App: React.FC = () => {
     const dateEnd = end || reportDateEnd;
 
     try {
-      // 1. Obtener Configuraciones de POS con sus IDs de sesión actuales
+      // 1. Obtener Configuraciones de POS - Odoo v18 nos dice el estado real aquí
       const allConfigs = await client.searchRead('pos.config', [], ['name', 'id', 'current_session_id', 'current_session_state']);
       const filteredConfigs = allConfigs.filter((c: any) => {
         const name = c.name.toUpperCase();
@@ -86,13 +85,11 @@ const App: React.FC = () => {
                !name.includes('TIENDA') && !name.includes('CRUZ') && !name.includes('P&P');
       });
       setPosConfigs(filteredConfigs);
-      const configIds = filteredConfigs.map((c: any) => c.id);
 
-      // 2. Buscar sesiones relevantes:
-      // - Sesiones activas (opened/closing)
-      // - Sesiones cerradas que iniciaron en el periodo
+      // 2. Buscar todas las sesiones que estén abiertas O que sean del rango de fechas
+      // Importante: No filtramos por fecha las sesiones abiertas para no perder turnos que cruzaron medianoche
       const sessionDomain = [
-        '&', ['config_id', 'in', configIds],
+        '&', ['config_id', 'in', filteredConfigs.map(c => c.id)],
         '|', 
           ['state', 'in', ['opened', 'opening_control', 'closing_control']], 
           '&', ['start_at', '>=', dateStart + ' 00:00:00'], ['start_at', '<=', dateEnd + ' 23:59:59']
@@ -105,32 +102,24 @@ const App: React.FC = () => {
       );
       const allSessionIds = sessions.map(s => s.id);
 
-      // 3. Obtener Pedidos vinculados a esas sesiones encontradas
+      // 3. Obtener Pedidos, Pagos y Líneas
       let orders: any[] = [];
-      if (allSessionIds.length > 0) {
-        orders = await client.searchRead('pos.order', 
-          [['session_id', 'in', allSessionIds]], 
-          ['amount_total', 'session_id', 'config_id', 'payment_ids', 'user_id', 'date_order'],
-          { limit: 5000 }
-        );
-      }
-
-      // 4. Obtener Pagos y Líneas de Producto
       let payments: any[] = [];
       let orderLines: any[] = [];
-      if (orders.length > 0) {
-        const paymentIds = orders.flatMap(o => o.payment_ids);
-        if (paymentIds.length > 0) {
-          payments = await client.searchRead('pos.payment', [['id', 'in', paymentIds]], ['amount', 'payment_method_id', 'pos_order_id', 'session_id']);
+      
+      if (allSessionIds.length > 0) {
+        orders = await client.searchRead('pos.order', [['session_id', 'in', allSessionIds]], ['amount_total', 'session_id', 'config_id', 'payment_ids', 'user_id', 'date_order'], { limit: 8000 });
+        
+        if (orders.length > 0) {
+          const paymentIds = orders.flatMap(o => o.payment_ids);
+          if (paymentIds.length > 0) {
+            payments = await client.searchRead('pos.payment', [['id', 'in', paymentIds]], ['amount', 'payment_method_id', 'pos_order_id', 'session_id']);
+          }
+          orderLines = await client.searchRead('pos.order.line', [['order_id', 'in', orders.map(o => o.id)]], ['product_id', 'qty', 'price_subtotal_incl', 'price_subtotal', 'order_id', 'session_id'], { limit: 15000 });
         }
-        orderLines = await client.searchRead('pos.order.line', 
-          [['order_id', 'in', orders.map(o => o.id)]], 
-          ['product_id', 'qty', 'price_subtotal_incl', 'price_subtotal', 'order_id', 'session_id'],
-          { limit: 10000 }
-        );
       }
 
-      // 5. Obtener Costos para Rentabilidad
+      // 4. Obtener Costos para Utilidad
       const uniqueProductIds = [...new Set(orderLines.map((l: any) => l.product_id[0]))];
       let productCosts: Record<number, number> = {};
       if (uniqueProductIds.length > 0) {
@@ -140,13 +129,9 @@ const App: React.FC = () => {
 
       const stats: any = {};
       for (const config of filteredConfigs) {
-        // Filtrar sesiones de esta botica específica
+        // El estado real de Odoo 18
+        const isOnline = config.current_session_state === 'opened' || config.current_session_state === 'opening_control';
         const configSessions = sessions.filter(s => s.config_id[0] === config.id);
-        
-        // Identificar si está abierta (según current_session_state o existencia de sesión opened)
-        const activeSession = configSessions.find(s => ['opened', 'opening_control', 'closing_control'].includes(s.state));
-        const isOnline = !!activeSession;
-        
         const latestSession = configSessions[0];
 
         const processedSessions = configSessions.map(sess => {
@@ -198,24 +183,24 @@ const App: React.FC = () => {
           };
         });
 
-        // Venta Acumulada del Periodo (Sumar ventas de todas las sesiones listadas en el periodo)
+        // La venta del periodo es la suma de las sesiones cargadas
         const periodTotal = processedSessions.reduce((acc, s) => acc + s.total_vta, 0);
-        const periodOrders = processedSessions.reduce((acc, s) => acc + s.order_count, 0);
 
         stats[config.id] = {
           day_total: periodTotal,
-          day_order_count: periodOrders,
+          day_order_count: processedSessions.reduce((acc, s) => acc + s.order_count, 0),
           isOpened: isOnline,
-          openedBy: isOnline ? activeSession.user_id[1] : '---',
-          cashBalance: isOnline ? (activeSession.cash_register_balance_end_real || 0) : (latestSession?.cash_register_balance_end_real || 0),
+          openedBy: isOnline && latestSession ? latestSession.user_id[1] : '---',
+          cashBalance: latestSession?.cash_register_balance_end_real || 0,
           sessions: processedSessions
         };
       }
       setPosSalesData(stats);
+      setLastSync(new Date().toLocaleTimeString('es-PE'));
 
     } catch (e) {
-      console.error("Error diagnóstico SJS:", e);
-      setErrorLog("Fallo de sincronización: Verifique conexión Odoo");
+      console.error("Error Sincronización:", e);
+      setErrorLog("Error de red: " + (e as any).message);
     } finally {
       setLoading(false);
     }
@@ -230,18 +215,17 @@ const App: React.FC = () => {
       { 'CAMPO': 'RESPONSABLE', 'VALOR': sess.user_id[1] },
       { 'CAMPO': 'ESTADO', 'VALOR': sess.state.toUpperCase() },
       { 'CAMPO': 'APERTURA', 'VALOR': sess.start_at },
-      { 'CAMPO': 'CIERRE', 'VALOR': sess.stop_at || 'ACTIVA' },
+      { 'CAMPO': 'CIERRE', 'VALOR': sess.stop_at || 'TURNO EN CURSO' },
       { 'CAMPO': 'VENTA TOTAL', 'VALOR': 'S/ ' + sess.total_vta.toFixed(2) },
-      { 'CAMPO': 'TICKETS', 'VALOR': sess.order_count },
+      { 'CAMPO': 'TRANSACCIONES', 'VALOR': sess.order_count },
       { 'CAMPO': '', 'VALOR': '' },
-      { 'CAMPO': '--- DESGLOSE PAGOS ---', 'VALOR': '' },
-      ...Object.entries(sess.payments).map(([m, a]) => ({ 'CAMPO': m, 'VALOR': 'S/ ' + Number(a).toFixed(2) }))
+      ...Object.entries(sess.payments).map(([m, a]) => ({ 'CAMPO': 'Pago: ' + m, 'VALOR': 'S/ ' + Number(a).toFixed(2) }))
     ];
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(resumen), "Auditoría");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(resumen), "Arqueo");
     if (sess.productAnalysis?.length > 0) {
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sess.productAnalysis), "Rentabilidad");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sess.productAnalysis), "Detalle Rentabilidad");
     }
-    XLSX.writeFile(wb, `Reporte_SJS_${configName.replace(' ', '_')}_Sesion_${sess.id}.xlsx`);
+    XLSX.writeFile(wb, `Audit_SJS_${configName.replace(' ','_')}_${sess.id}.xlsx`);
   };
 
   const exportConsolidadoExcel = () => {
@@ -252,13 +236,13 @@ const App: React.FC = () => {
         'Botica': config.name,
         'Venta Acumulada Periodo': d.day_total || 0,
         'Tickets': d.day_order_count || 0,
-        'Estado Real': d.isOpened ? 'EN LÍNEA' : 'CERRADA',
+        'Estado Odoo': d.isOpened ? 'EN LÍNEA' : 'CERRADA',
         'Responsable': d.openedBy || '---',
-        'Saldo Caja (Odoo)': d.cashBalance || 0
+        'Fondo de Caja': d.cashBalance || 0
       };
     });
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Consolidado Red");
-    XLSX.writeFile(wb, `Consolidado_Red_SJS_${reportDateStart}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Consolidado");
+    XLSX.writeFile(wb, `Consolidado_SanJose_${reportDateStart}.xlsx`);
   };
 
   const currentSessions = useMemo(() => {
@@ -428,12 +412,22 @@ const App: React.FC = () => {
 
         <div className="flex-1 flex flex-col overflow-hidden">
           <header className="h-20 bg-white border-b border-gray-100 px-8 flex items-center justify-between shrink-0">
-             <div>
-                <h2 className="text-xl font-black text-gray-800 uppercase tracking-tight">
-                  {activeTab === 'sedes' ? 'Inteligencia de Red SJS' : activeTab === 'purchase' ? 'Generar Solicitud' : activeTab === 'requests' ? 'Seguimiento de Pedidos' : 'Dashboard Operativo'}
-                </h2>
-                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Control Profesional Odoo v18</p>
+             <div className="flex items-center gap-6">
+                <div>
+                  <h2 className="text-xl font-black text-gray-800 uppercase tracking-tight">
+                    {activeTab === 'sedes' ? 'Auditoría Red SJS v18' : activeTab === 'purchase' ? 'Generar Solicitud' : activeTab === 'requests' ? 'Seguimiento' : 'Dashboard Operativo'}
+                  </h2>
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                    {lastSync ? <><Clock size={10} className="text-odoo-success"/> Actualizado: {lastSync}</> : 'Control Profesional Odoo'}
+                  </p>
+                </div>
+                {activeTab === 'sedes' && (
+                  <button onClick={() => fetchPosStats()} disabled={loading} className={`p-3 bg-odoo-primary text-white rounded-2xl shadow-lg active:scale-95 transition-all ${loading ? 'opacity-50' : 'hover:brightness-110'}`}>
+                    <RefreshCw size={20} className={loading ? 'animate-spin' : ''}/>
+                  </button>
+                )}
              </div>
+             
              {activeTab === 'sedes' && (
                <div className="flex items-center gap-4">
                   <div className="flex items-center gap-2 bg-gray-50 p-2 rounded-xl border border-gray-100">
@@ -441,10 +435,10 @@ const App: React.FC = () => {
                      <input type="date" value={reportDateStart} onChange={e => setReportDateStart(e.target.value)} className="bg-transparent border-none text-[11px] font-black outline-none w-28"/>
                      <span className="text-[11px] font-black opacity-30">a</span>
                      <input type="date" value={reportDateEnd} onChange={e => setReportDateEnd(e.target.value)} className="bg-transparent border-none text-[11px] font-black outline-none w-28"/>
-                     <button onClick={() => fetchPosStats()} className="p-1.5 bg-odoo-primary/10 hover:bg-odoo-primary/20 rounded-lg transition-all text-odoo-primary active:scale-90"><Search size={14}/></button>
+                     <button onClick={() => fetchPosStats()} className="p-1.5 bg-odoo-primary/10 hover:bg-odoo-primary/20 rounded-lg text-odoo-primary"><Search size={14}/></button>
                   </div>
                   <button onClick={exportConsolidadoExcel} className="o-btn-secondary flex items-center gap-2 border-green-200 text-green-600 font-black text-[10px] hover:bg-green-50 shadow-sm active:scale-95">
-                    <FileSpreadsheet size={16}/> EXPORTAR RED
+                    <FileSpreadsheet size={16}/> DESCARGAR RED
                   </button>
                </div>
              )}
@@ -455,19 +449,22 @@ const App: React.FC = () => {
               <div className="max-w-7xl mx-auto space-y-12 o-animate-fade pb-20">
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                    <div className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm">
-                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Venta Red Periodo</p>
+                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Venta Red Hoy</p>
                       <p className="text-2xl font-black text-gray-800">S/ {Number(Object.values(posSalesData).reduce((a: any, b: any) => a + (b.day_total || 0), 0)).toFixed(2)}</p>
                    </div>
                    <div className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm">
-                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Total Turnos</p>
-                      <p className="text-2xl font-black text-odoo-primary">{Object.values(posSalesData).reduce((a: number, b: any) => a + (b.sessions?.length || 0), 0)}</p>
-                   </div>
-                   <div className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm">
                       <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Cajas Activas</p>
-                      <p className="text-2xl font-black text-odoo-success">{posConfigs.filter(c => posSalesData[c.id]?.isOpened).length} / {posConfigs.length}</p>
+                      <p className="text-2xl font-black text-odoo-success flex items-center gap-2">
+                        {posConfigs.filter(c => posSalesData[c.id]?.isOpened).length} / {posConfigs.length}
+                        <Activity size={20} className="animate-pulse text-odoo-success opacity-50"/>
+                      </p>
                    </div>
                    <div className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm">
-                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Efectivo Turno</p>
+                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Tickets Emitidos</p>
+                      <p className="text-2xl font-black text-odoo-primary">{Object.values(posSalesData).reduce((a: number, b: any) => a + (b.day_order_count || 0), 0)}</p>
+                   </div>
+                   <div className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm">
+                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Saldo Estimado</p>
                       <p className="text-2xl font-black text-amber-500">S/ {Number(Object.values(posSalesData).reduce((a: number, b: any) => a + (b.cashBalance || 0), 0)).toFixed(2)}</p>
                    </div>
                 </div>
@@ -491,8 +488,8 @@ const App: React.FC = () => {
                             </div>
                             <div className="space-y-4 cursor-pointer" onClick={() => { setSelectedPosConfig(config); setSelectedSessionId(null); }}>
                                <div className="flex justify-between items-center"><p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Responsable</p><p className="text-xs font-black text-gray-700">{sales.openedBy || '---'}</p></div>
-                               <div className="flex justify-between items-center"><p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Saldo Odoo</p><p className="text-sm font-black text-amber-500">S/ {Number(sales.cashBalance || 0).toFixed(2)}</p></div>
-                               <div className="flex justify-between items-center pt-4 border-t border-gray-50"><p className="text-[10px] font-black text-odoo-primary uppercase tracking-widest">Venta Periodo</p><p className="text-xl font-black text-gray-800">S/ {Number(sales.day_total || 0).toFixed(2)}</p></div>
+                               <div className="flex justify-between items-center"><p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Saldo Actual</p><p className="text-sm font-black text-amber-500">S/ {Number(sales.cashBalance || 0).toFixed(2)}</p></div>
+                               <div className="flex justify-between items-center pt-4 border-t border-gray-50"><p className="text-[10px] font-black text-odoo-primary uppercase tracking-widest">Venta del Día</p><p className="text-xl font-black text-gray-800">S/ {Number(sales.day_total || 0).toFixed(2)}</p></div>
                             </div>
                             <div className="mt-6 flex items-center justify-end">
                                <ChevronRight size={18} className={`transition-all ${selectedPosConfig?.id === config.id ? 'text-odoo-primary transform translate-x-1' : 'text-gray-300'}`}/>
@@ -507,14 +504,17 @@ const App: React.FC = () => {
                      {selectedPosConfig ? (
                        <div className="bg-white p-8 rounded-[3rem] border border-gray-100 shadow-xl o-animate-fade space-y-8">
                           <div>
-                            <h3 className="text-xs font-black text-gray-400 uppercase tracking-[0.2em] mb-4 flex items-center gap-2"><ListFilter size={16}/> SESIONES DEL DÍA</h3>
+                            <div className="flex justify-between items-center mb-4">
+                               <h3 className="text-xs font-black text-gray-400 uppercase tracking-[0.2em] flex items-center gap-2"><ListFilter size={16}/> TURNOS RECIENTES</h3>
+                               <button onClick={() => fetchPosStats()} className="text-odoo-primary p-2 hover:bg-gray-50 rounded-xl transition-all"><RefreshCw size={14} className={loading ? 'animate-spin' : ''}/></button>
+                            </div>
                             <div className="space-y-3 max-h-[400px] overflow-y-auto custom-scrollbar px-1">
                                {currentSessions.map((s: any) => (
                                  <button key={s.id} onClick={() => setSelectedSessionId(s.id)} className={`w-full p-4 rounded-2xl border text-left transition-all ${activeSessionDetail?.id === s.id ? 'bg-odoo-primary text-white border-odoo-primary shadow-lg' : 'bg-gray-50 border-transparent hover:bg-gray-100'}`}>
                                     <div className="flex justify-between items-start mb-2">
-                                       <p className="text-[10px] font-black uppercase tracking-widest opacity-80">ID #{s.id}</p>
+                                       <p className="text-[10px] font-black uppercase tracking-widest opacity-80">SESIÓN #{s.id}</p>
                                        <span className={`text-[8px] font-black px-2 py-1 rounded-lg uppercase ${['opened', 'opening_control', 'closing_control'].includes(s.state) ? 'bg-green-500 text-white animate-pulse' : 'bg-gray-400 text-white'}`}>
-                                         {s.state === 'opened' ? 'EN LÍNEA' : s.state === 'closing_control' ? 'CERRANDO' : 'CERRADA'}
+                                         {s.state === 'opened' ? 'ABIERTA' : s.state === 'closing_control' ? 'CERRANDO' : 'CERRADA'}
                                        </span>
                                     </div>
                                     <p className="text-xs font-black truncate">{s.user_id[1]}</p>
@@ -527,16 +527,16 @@ const App: React.FC = () => {
                                     </div>
                                  </button>
                                ))}
-                               {currentSessions.length === 0 && <p className="text-center py-10 text-[10px] font-black text-gray-300 uppercase italic">Sin turnos registrados</p>}
+                               {currentSessions.length === 0 && <p className="text-center py-10 text-[10px] font-black text-gray-300 uppercase italic">Esperando datos de Odoo...</p>}
                             </div>
                           </div>
 
                           {activeSessionDetail && (
                             <div className="pt-8 border-t border-gray-100 space-y-8 o-animate-fade">
                                <div className="flex justify-between items-center">
-                                  <h3 className="text-sm font-black text-gray-800 uppercase tracking-widest flex items-center gap-2"><PieChart size={20} className="text-odoo-primary"/> ARQUEO</h3>
+                                  <h3 className="text-sm font-black text-gray-800 uppercase tracking-widest flex items-center gap-2"><PieChart size={20} className="text-odoo-primary"/> AUDITORÍA</h3>
                                   <button onClick={() => exportSessionExcel(activeSessionDetail, selectedPosConfig.name)} className="bg-odoo-primary text-white px-4 py-2 rounded-xl font-black text-[10px] flex items-center gap-2 hover:brightness-110 active:scale-95 transition-all">
-                                    <Download size={14}/> EXCEL
+                                    <Download size={14}/> EXPORTAR
                                   </button>
                                </div>
 
@@ -559,7 +559,7 @@ const App: React.FC = () => {
                                   </div>
 
                                   <div className="pt-6 border-t border-gray-50">
-                                    <h3 className="text-[11px] font-black text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2"><Users size={16}/> PERSONAL POS</h3>
+                                    <h3 className="text-[11px] font-black text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2"><Users size={16}/> VENTAS POR PERSONA</h3>
                                     <div className="space-y-2">
                                        {Object.entries(activeSessionDetail.users || {}).map(([user, amount]: [string, any]) => (
                                          <div key={user} className="flex items-center justify-between p-3 bg-gray-50 rounded-2xl">
@@ -575,7 +575,7 @@ const App: React.FC = () => {
                                        <h3 className="text-[11px] font-black text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2"><Target size={16}/> MARGEN BRUTO</h3>
                                        <div className="p-4 bg-green-50 rounded-2xl border border-green-100 flex justify-between items-center">
                                           <div>
-                                            <p className="text-[8px] font-black text-green-700 uppercase opacity-70">Utilidad Estimada</p>
+                                            <p className="text-[8px] font-black text-green-700 uppercase opacity-70">Utilidad Proyectada</p>
                                             <p className="text-lg font-black text-green-800">S/ {activeSessionDetail.productAnalysis.reduce((acc: any, curr: any) => acc + curr['Ganancia (S/)'], 0).toFixed(2)}</p>
                                           </div>
                                           <TrendingUpIcon size={24} className="text-green-500 opacity-40"/>
@@ -588,8 +588,8 @@ const App: React.FC = () => {
                        </div>
                      ) : (
                        <div className="bg-gray-100/40 p-12 rounded-[3rem] border border-dashed border-gray-200 text-center">
-                          <Activity size={40} className="mx-auto text-gray-300 mb-4"/>
-                          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Seleccione una caja para ver auditoría v18</p>
+                          <Activity size={40} className="mx-auto text-gray-300 mb-4 animate-pulse"/>
+                          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Seleccione una caja para ver auditoría real</p>
                        </div>
                      )}
                   </div>
@@ -602,57 +602,57 @@ const App: React.FC = () => {
                 <div className="bg-odoo-primary text-white p-12 rounded-[3rem] shadow-xl relative overflow-hidden">
                   <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -mr-20 -mt-20 blur-3xl"></div>
                   <h3 className="text-3xl font-black uppercase tracking-tight mb-2">Operaciones SJS</h3>
-                  <p className="text-sm opacity-80 max-w-md font-medium mb-8">Gestión centralizada de boticas. Monitoreo de ventas, arqueos de caja y abastecimiento inteligente.</p>
+                  <p className="text-sm opacity-80 max-w-md font-medium mb-8">Sistema inteligente de monitoreo. Todas las boticas sincronizadas en tiempo real con Odoo v18.</p>
                   <div className="flex gap-4 relative z-10">
-                    <button onClick={() => setActiveTab('purchase')} className="bg-white text-odoo-primary px-8 py-3 rounded-2xl font-black text-xs uppercase hover:scale-105 transition-all shadow-lg active:scale-95">Nuevo Pedido</button>
-                    {canSeeAdminTabs && <button onClick={() => setActiveTab('sedes')} className="bg-white/10 border border-white/20 text-white px-8 py-3 rounded-2xl font-black text-xs uppercase hover:bg-white/20 transition-all">Auditoría Red</button>}
+                    <button onClick={() => setActiveTab('purchase')} className="bg-white text-odoo-primary px-8 py-3 rounded-2xl font-black text-xs uppercase hover:scale-105 transition-all shadow-lg active:scale-95">Solicitar Mercadería</button>
+                    {canSeeAdminTabs && <button onClick={() => setActiveTab('sedes')} className="bg-white/10 border border-white/20 text-white px-8 py-3 rounded-2xl font-black text-xs uppercase hover:bg-white/20 transition-all">Ver Red de Sedes</button>}
                   </div>
                 </div>
               </div>
             )}
 
-            {/* Resto de pestañas Purchase y Requests se mantienen igual para no afectar lógica de stock */}
+            {/* Pestañas de Almacén se mantienen integradas */}
             {activeTab === 'purchase' && !orderComplete && (
               <div className="max-w-5xl mx-auto bg-white p-12 rounded-[3rem] shadow-sm border border-gray-100 o-animate-fade">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-12 mb-12">
                   <div>
-                    <label className="text-[10px] font-black text-odoo-primary uppercase tracking-widest mb-2 block">Botica de Destino</label>
+                    <label className="text-[10px] font-black text-odoo-primary uppercase tracking-widest mb-2 block">Destino (Botica)</label>
                     <select className="w-full bg-gray-50 border-none rounded-2xl p-4 font-black text-sm outline-none appearance-none" value={selectedWarehouseId} onChange={e => setSelectedWarehouseId(Number(e.target.value))}>
                       <option value="">-- SELECCIONAR DESTINO --</option>
                       {warehouses.filter(w => w.id !== principal1?.id).map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
                     </select>
                   </div>
                   <div>
-                    <label className="text-[10px] font-black text-odoo-primary uppercase tracking-widest mb-2 block">Nota para Principal1</label>
-                    <input type="text" className="w-full bg-gray-50 border-none rounded-2xl p-4 font-bold text-sm outline-none" placeholder="Urgente, reposición mensual, etc..." value={customNotes} onChange={e => setCustomNotes(e.target.value)} />
+                    <label className="text-[10px] font-black text-odoo-primary uppercase tracking-widest mb-2 block">Referencia / Glosa</label>
+                    <input type="text" className="w-full bg-gray-50 border-none rounded-2xl p-4 font-bold text-sm outline-none" placeholder="Urgente, Reposición, etc..." value={customNotes} onChange={e => setCustomNotes(e.target.value)} />
                   </div>
                 </div>
                 <div className="space-y-6">
                   <div className="flex justify-between items-center border-b border-gray-100 pb-4">
-                    <h3 className="text-[11px] font-black uppercase text-odoo-primary tracking-widest">Items del Pedido</h3>
-                    <button onClick={() => { fetchProducts(); setShowProductModal(true); }} className="bg-odoo-primary text-white px-6 py-2.5 rounded-2xl text-[10px] font-black flex items-center gap-2 hover:brightness-110 shadow-lg active:scale-95 transition-all"><Plus size={18}/> AGREGAR PRODUCTO</button>
+                    <h3 className="text-[11px] font-black uppercase text-odoo-primary tracking-widest">Detalle del Pedido</h3>
+                    <button onClick={() => { fetchProducts(); setShowProductModal(true); }} className="bg-odoo-primary text-white px-6 py-2.5 rounded-2xl text-[10px] font-black flex items-center gap-2 hover:brightness-110 shadow-lg active:scale-95 transition-all"><Plus size={18}/> AGREGAR</button>
                   </div>
                   <div className="space-y-3">
                     {cart.map((item, idx) => (
                       <div key={idx} className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl">
                         <div className="flex-1">
                           <p className="font-black text-sm text-gray-800 uppercase">{item.name}</p>
-                          <p className="text-[9px] font-bold text-gray-400 uppercase">REF: {item.default_code || '---'}</p>
+                          <p className="text-[9px] font-bold text-gray-400 uppercase">SKU: {item.default_code || '---'}</p>
                         </div>
                         <div className="flex items-center gap-8">
                           <div className="flex flex-col items-center">
-                            <span className="text-[8px] font-bold text-gray-400 mb-1 uppercase">CANTIDAD</span>
+                            <span className="text-[8px] font-bold text-gray-400 mb-1 uppercase">CANT</span>
                             <input type="number" className="w-20 text-center bg-white border border-gray-100 rounded-xl p-2 font-black text-lg outline-none" value={item.qty} min="1" onChange={(e) => setCart(cart.map((c, i) => i === idx ? {...c, qty: parseInt(e.target.value) || 0} : c))} />
                           </div>
                           <button onClick={() => setCart(cart.filter((_,i) => i !== idx))} className="text-gray-300 hover:text-rose-500 transition-colors pt-4"><Trash2 size={20}/></button>
                         </div>
                       </div>
                     ))}
-                    {cart.length === 0 && <p className="text-center py-10 text-gray-300 font-bold uppercase text-[10px] tracking-widest italic">El carrito está vacío</p>}
+                    {cart.length === 0 && <p className="text-center py-10 text-gray-300 font-bold uppercase text-[10px] tracking-widest italic">Seleccione productos para PRINCIPAL1</p>}
                   </div>
                   {cart.length > 0 && (
-                    <button onClick={submitToOdoo} disabled={loading || !selectedWarehouseId} className="w-full bg-odoo-primary text-white py-5 rounded-[2rem] font-black text-xs tracking-[0.2em] shadow-2xl mt-8 flex justify-center items-center gap-3">
-                      {loading ? <Loader2 className="animate-spin" size={24}/> : <><Send size={20}/> ENVIAR SOLICITUD A ODOO</>}
+                    <button onClick={submitToOdoo} disabled={loading || !selectedWarehouseId} className="w-full bg-odoo-primary text-white py-5 rounded-[2rem] font-black text-xs tracking-[0.2em] shadow-2xl mt-8 flex justify-center items-center gap-3 active:scale-95 transition-all">
+                      {loading ? <Loader2 className="animate-spin" size={24}/> : <><Send size={20}/> ENVIAR REQUERIMIENTO A ODOO</>}
                     </button>
                   )}
                 </div>
@@ -674,12 +674,12 @@ const App: React.FC = () => {
                             {req.state === 'done' ? 'ENTREGADO' : req.state === 'assigned' ? 'EN CAMINO' : req.state === 'confirmed' ? 'PENDIENTE' : req.state}
                           </span>
                         </div>
-                        <p className="text-[10px] font-bold text-gray-400 uppercase mt-1">Destino: <span className="text-gray-600">{req.location_dest_id?.[1]}</span></p>
-                        <p className="text-[10px] font-bold text-gray-400 uppercase italic">Ref: {req.origin || 'App Mobile'}</p>
+                        <p className="text-[10px] font-bold text-gray-400 uppercase mt-1">Destino: <span className="text-gray-600 font-black">{req.location_dest_id?.[1]}</span></p>
+                        <p className="text-[10px] font-bold text-gray-400 uppercase italic">Ref: {req.origin || 'App Web'}</p>
                       </div>
                     </div>
                     <div className="text-right">
-                       <p className="text-[10px] font-black text-gray-400 uppercase mb-1">Programado</p>
+                       <p className="text-[10px] font-black text-gray-400 uppercase mb-1">Día Solicitado</p>
                        <p className="text-xs font-black text-gray-700">{new Date(req.scheduled_date).toLocaleDateString('es-PE')}</p>
                     </div>
                   </div>
@@ -694,13 +694,13 @@ const App: React.FC = () => {
         <div className="fixed inset-0 z-[200] bg-gray-900/60 backdrop-blur-sm flex items-center justify-center p-6">
           <div className="bg-white w-full max-w-2xl h-[80vh] flex flex-col rounded-[3rem] shadow-2xl overflow-hidden">
             <div className="p-8 border-b flex justify-between items-center bg-gray-50/50">
-               <h3 className="font-black text-xl text-gray-800 uppercase tracking-tight">Catálogo SJS</h3>
+               <h3 className="font-black text-xl text-gray-800 uppercase tracking-tight">Catálogo Almacén</h3>
                <button onClick={() => setShowProductModal(false)} className="p-3 bg-white rounded-2xl text-gray-300 hover:text-rose-500 shadow-sm"><X size={24}/></button>
             </div>
             <div className="px-8 py-6 bg-white border-b">
               <div className="relative">
                 <Search size={20} className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-300"/>
-                <input autoFocus type="text" className="w-full pl-12 pr-4 py-4.5 bg-gray-50 rounded-2xl focus:ring-4 focus:ring-odoo-primary/5 outline-none text-sm font-black" placeholder="Buscar producto..." value={productSearch} onChange={e => setProductSearch(e.target.value)} />
+                <input autoFocus type="text" className="w-full pl-12 pr-4 py-4.5 bg-gray-50 rounded-2xl focus:ring-4 focus:ring-odoo-primary/5 outline-none text-sm font-black" placeholder="Nombre de medicamento o código..." value={productSearch} onChange={e => setProductSearch(e.target.value)} />
               </div>
             </div>
             <div className="flex-1 overflow-y-auto p-6 custom-scrollbar bg-white">
@@ -713,11 +713,11 @@ const App: React.FC = () => {
                 }} className="w-full flex items-center justify-between p-5 bg-white hover:bg-odoo-primary/5 rounded-[1.5rem] border border-transparent transition-all text-left mb-2 group">
                   <div>
                     <p className="font-black text-sm text-gray-800 uppercase group-hover:text-odoo-primary">{p.name}</p>
-                    <p className="text-[9px] text-gray-400 font-bold uppercase mt-1">REF: {p.default_code || '---'}</p>
+                    <p className="text-[9px] text-gray-400 font-bold uppercase mt-1">CÓDIGO: {p.default_code || '---'}</p>
                   </div>
                   <div className="text-right">
                     <p className="text-sm font-black text-odoo-success group-hover:scale-110 transition-transform">{Math.floor(p.qty_available)}</p>
-                    <p className="text-[8px] font-black text-gray-400 uppercase">Stock</p>
+                    <p className="text-[8px] font-black text-gray-400 uppercase">Disponible</p>
                   </div>
                 </button>
               ))}
@@ -731,8 +731,8 @@ const App: React.FC = () => {
            <div className="max-w-md space-y-6 o-animate-fade">
               <div className="w-24 h-24 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-8 animate-bounce"><Check size={60}/></div>
               <h3 className="text-4xl font-black uppercase tracking-tight">¡Enviado!</h3>
-              <p className="text-lg opacity-80 font-medium">La solicitud ha sido registrada en Odoo.</p>
-              <button onClick={() => { setOrderComplete(false); setActiveTab('requests'); }} className="bg-white text-odoo-primary px-10 py-4 rounded-[2rem] font-black uppercase text-sm shadow-2xl hover:scale-105 transition-transform mt-8">Continuar</button>
+              <p className="text-lg opacity-80 font-medium">La solicitud ha sido registrada correctamente en Odoo.</p>
+              <button onClick={() => { setOrderComplete(false); setActiveTab('requests'); }} className="bg-white text-odoo-primary px-10 py-4 rounded-[2rem] font-black uppercase text-sm shadow-2xl hover:scale-105 transition-transform mt-8">Ver Solicitudes</button>
            </div>
         </div>
       )}

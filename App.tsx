@@ -5,7 +5,8 @@ import {
   ChevronRight, AlertCircle, User as UserIcon, LayoutGrid, Loader2, Barcode, 
   Check, Store, ClipboardList, Activity, X, MoreVertical, Layers, 
   ArrowRightLeft, Package, Home, Building, Truck, MoveHorizontal, Info, AlertTriangle,
-  Clock, CheckCircle2, xCircle, TrendingUp, CreditCard, Wallet, Banknote, ShoppingBag
+  Clock, CheckCircle2, xCircle, TrendingUp, CreditCard, Wallet, Banknote, ShoppingBag,
+  DollarSign, PieChart, Filter
 } from 'lucide-react';
 import { OdooClient } from './services/odooService';
 import { AppConfig, Warehouse, Employee, Product } from './types';
@@ -46,6 +47,7 @@ const App: React.FC = () => {
   const [productSearch, setProductSearch] = useState("");
   const [showProductModal, setShowProductModal] = useState(false);
   const [orderComplete, setOrderComplete] = useState(false);
+  const [selectedPosDetail, setSelectedPosDetail] = useState<any>(null);
   
   const client = useMemo(() => new OdooClient(config.url, config.db), [config.url, config.db]);
 
@@ -59,32 +61,57 @@ const App: React.FC = () => {
     if (!canSeeAdminTabs) return;
     setLoading(true);
     try {
-      // 1. Obtener Cajas
+      // 1. Obtener Cajas (Filtrado por las sedes solicitadas)
       const configs = await client.searchRead('pos.config', [], ['name', 'current_session_id', 'id']);
       setPosConfigs(configs);
 
-      // 2. Obtener pedidos de hoy para estadísticas
+      // 2. Obtener sesiones activas para balances
+      const sessionIds = configs.filter(c => c.current_session_id).map(c => c.current_session_id[0]);
+      let activeSessions: any[] = [];
+      if (sessionIds.length > 0) {
+        activeSessions = await client.searchRead('pos.session', [['id', 'in', sessionIds]], ['id', 'user_id', 'start_at', 'cash_register_balance_end_real', 'state']);
+      }
+
+      // 3. Obtener pedidos de hoy
       const today = new Date().toISOString().split('T')[0];
       const orders = await client.searchRead('pos.order', 
         [['date_order', '>=', today + ' 00:00:00']], 
-        ['amount_total', 'session_id', 'config_id', 'lines', 'payment_ids'],
+        ['amount_total', 'session_id', 'config_id', 'payment_ids'],
         { limit: 1000 }
       );
 
-      // Agrupar ventas por config_id
-      const stats: any = {};
-      const productCounts: any = {};
+      // 4. Obtener pagos para desglose
+      const paymentIds = orders.flatMap(o => o.payment_ids);
+      let payments: any[] = [];
+      if (paymentIds.length > 0) {
+        payments = await client.searchRead('pos.payment', [['id', 'in', paymentIds]], ['amount', 'payment_method_id', 'pos_order_id']);
+      }
 
-      for (const order of orders) {
-        const cid = order.config_id[0];
-        if (!stats[cid]) stats[cid] = { total: 0, orders: 0, payments: {} };
-        stats[cid].total += order.amount_total;
-        stats[cid].orders += 1;
+      // Procesar Estadísticas
+      const stats: any = {};
+      for (const config of configs) {
+        const sess = activeSessions.find(s => s.id === (config.current_session_id?.[0]));
+        const configOrders = orders.filter(o => o.config_id[0] === config.id);
+        const configPayments = payments.filter(p => configOrders.some(o => o.id === p.pos_order_id[0]));
+        
+        const paymentBreakdown: any = {};
+        configPayments.forEach(p => {
+          const method = p.payment_method_id[1];
+          paymentBreakdown[method] = (paymentBreakdown[method] || 0) + p.amount;
+        });
+
+        stats[config.id] = {
+          total: configOrders.reduce((a, b) => a + b.amount_total, 0),
+          orderCount: configOrders.length,
+          openedBy: sess?.user_id?.[1] || 'Cerrada',
+          cashBalance: sess?.cash_register_balance_end_real || 0,
+          payments: paymentBreakdown,
+          lastClosing: sess?.stop_at || '---'
+        };
       }
       setPosSalesData(stats);
 
-      // 3. Mejores productos (Top 5 simplificado)
-      // Nota: En un entorno real se harían más llamadas o un read_group, aquí simulamos el impacto
+      // 5. Productos más vendidos
       const orderLines = await client.searchRead('pos.order.line', 
         [['create_date', '>=', today + ' 00:00:00']], 
         ['product_id', 'qty', 'price_subtotal_incl'],
@@ -99,10 +126,10 @@ const App: React.FC = () => {
         items[pid].total += l.price_subtotal_incl;
       });
 
-      setBestSellers(Object.values(items).sort((a: any, b: any) => b.qty - a.qty).slice(0, 5));
+      setBestSellers(Object.values(items).sort((a: any, b: any) => b.qty - a.qty).slice(0, 8));
 
     } catch (e) {
-      console.error("Error en analítica POS:", e);
+      console.error("Error en analítica SJS:", e);
     } finally {
       setLoading(false);
     }
@@ -340,9 +367,9 @@ const App: React.FC = () => {
           <header className="h-20 bg-white border-b border-gray-100 px-8 flex items-center justify-between shrink-0">
             <div>
               <h2 className="text-xl font-black text-gray-800 uppercase tracking-tight">
-                {activeTab === 'dashboard' ? `Hola, ${session.name.split(' ')[0]}` : activeTab === 'purchase' ? 'Generar Solicitud' : activeTab === 'requests' ? 'Seguimiento de Pedidos' : 'Control de Sedes (Real-Time)'}
+                {activeTab === 'dashboard' ? `Hola, ${session.name.split(' ')[0]}` : activeTab === 'purchase' ? 'Generar Solicitud' : activeTab === 'requests' ? 'Seguimiento de Pedidos' : 'SJS Network Intelligence'}
               </h2>
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Boticas San José S.A.C.</p>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Real-Time SJS Operations Management</p>
             </div>
             <button onClick={() => { loadAppData(session.id, session.company_id, session.odoo_user_id); if(activeTab === 'sedes') fetchPosStats(); }} className="o-btn-secondary flex items-center gap-2 border-gray-100 font-black text-[10px]">
               <RefreshCw size={14} className={loading ? 'animate-spin' : ''}/> ACTUALIZAR
@@ -369,7 +396,7 @@ const App: React.FC = () => {
                 <div className="bg-odoo-primary text-white p-12 rounded-[3rem] shadow-xl relative overflow-hidden">
                   <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -mr-20 -mt-20"></div>
                   <div className="relative z-10 space-y-4">
-                    <h3 className="text-2xl font-black uppercase tracking-tight">Portal de Operaciones SJS</h3>
+                    <h3 className="text-2xl font-black uppercase tracking-tight">Abastecimiento SJS</h3>
                     <p className="text-sm opacity-80 max-w-md font-medium">Gestiona tus pedidos de stock y monitorea el estado de tus transferencias desde la central PRINCIPAL1.</p>
                     <button onClick={() => setActiveTab('purchase')} className="bg-white text-odoo-primary px-8 py-3 rounded-2xl font-black text-xs uppercase hover:scale-105 transition-transform">Crear Nuevo Pedido</button>
                   </div>
@@ -378,90 +405,144 @@ const App: React.FC = () => {
             )}
 
             {activeTab === 'sedes' && canSeeAdminTabs && (
-              <div className="max-w-6xl mx-auto space-y-12 o-animate-fade">
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              <div className="max-w-6xl mx-auto space-y-12 o-animate-fade pb-20">
+                {/* Panel Métricas Globales */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                   <div className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm">
+                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Venta Global Hoy</p>
+                      {/* Fixed: Property 'toFixed' does not exist on type 'unknown' on line 425. Using Number() for safety. */}
+                      <p className="text-2xl font-black text-gray-800">S/ {Number(Object.values(posSalesData).reduce((a: any, b: any) => a + (b.total || 0), 0)).toFixed(2)}</p>
+                   </div>
+                   <div className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm">
+                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Cajas Activas</p>
+                      <p className="text-2xl font-black text-odoo-success">{posConfigs.filter(c => c.current_session_id).length} / {posConfigs.length}</p>
+                   </div>
+                   <div className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm">
+                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Tickets Emitidos</p>
+                      <p className="text-2xl font-black text-odoo-primary">{Object.values(posSalesData).reduce((a: number, b: any) => a + (b.orderCount || 0), 0)}</p>
+                   </div>
+                   <div className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm">
+                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Balance Efectivo</p>
+                      {/* Using Number() to prevent 'unknown' errors with toFixed. */}
+                      <p className="text-2xl font-black text-amber-500">S/ {Number(Object.values(posSalesData).reduce((a: number, b: any) => a + (b.cashBalance || 0), 0)).toFixed(2)}</p>
+                   </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+                  {/* Grid de Sedes */}
                   <div className="lg:col-span-2 space-y-6">
-                    <div className="flex items-center justify-between mb-2">
-                       <h3 className="text-sm font-black text-gray-800 uppercase tracking-widest flex items-center gap-2"><Activity size={18} className="text-odoo-primary"/> ESTADO DE CAJAS</h3>
-                       <span className="text-[10px] font-bold text-gray-400 uppercase">Hoy: {new Date().toLocaleDateString()}</span>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <h3 className="text-sm font-black text-gray-800 uppercase tracking-widest flex items-center gap-3">
+                      <LayoutGrid size={20} className="text-odoo-primary"/> MONITOREO DE BOTICAS
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                       {posConfigs.map(config => {
-                        const sales = posSalesData[config.id] || { total: 0, orders: 0 };
+                        const sales = posSalesData[config.id] || {};
                         const isOnline = !!config.current_session_id;
                         return (
-                          <div key={config.id} className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm hover:border-odoo-primary/20 transition-all group">
-                            <div className="flex justify-between items-start mb-4">
-                              <div className="flex items-center gap-3">
-                                <div className={`w-3 h-3 rounded-full ${isOnline ? 'bg-odoo-success animate-pulse' : 'bg-gray-300'}`}></div>
-                                <h4 className="font-black text-gray-800 uppercase text-sm">{config.name}</h4>
-                              </div>
-                              <span className={`text-[9px] font-black px-2 py-1 rounded-lg uppercase ${isOnline ? 'bg-green-50 text-green-600' : 'bg-gray-50 text-gray-400'}`}>
-                                {isOnline ? 'En Línea' : 'Cerrada'}
-                              </span>
-                            </div>
-                            <div className="flex items-end justify-between">
-                               <div>
-                                  <p className="text-[10px] font-bold text-gray-300 uppercase">Venta del Día</p>
-                                  <p className="text-xl font-black text-gray-800">S/ {sales.total.toFixed(2)}</p>
+                          <button key={config.id} onClick={() => setSelectedPosDetail(config)} className={`bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm transition-all text-left hover:scale-[1.02] active:scale-95 group ${selectedPosDetail?.id === config.id ? 'ring-4 ring-odoo-primary/10 border-odoo-primary' : ''}`}>
+                            <div className="flex justify-between items-start mb-6">
+                               <div className="flex items-center gap-3">
+                                  <div className={`w-3.5 h-3.5 rounded-full ${isOnline ? 'bg-odoo-success animate-pulse' : 'bg-gray-200'}`}></div>
+                                  <h4 className="font-black text-gray-800 uppercase text-sm tracking-tight">{config.name}</h4>
                                </div>
-                               <div className="text-right">
-                                  <p className="text-[10px] font-bold text-gray-300 uppercase">Tickets</p>
-                                  <p className="text-sm font-black text-odoo-primary">{sales.orders}</p>
+                               <span className={`text-[9px] font-black px-3 py-1.5 rounded-xl uppercase tracking-widest ${isOnline ? 'bg-green-50 text-green-600' : 'bg-gray-50 text-gray-400'}`}>
+                                 {isOnline ? 'En Línea' : 'Cerrada'}
+                               </span>
+                            </div>
+                            
+                            <div className="space-y-4">
+                               <div className="flex justify-between items-center">
+                                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Responsable</p>
+                                  <p className="text-xs font-black text-gray-700">{sales.openedBy || 'S/D'}</p>
+                               </div>
+                               <div className="flex justify-between items-center">
+                                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Balance Efectivo</p>
+                                  {/* Using Number() to prevent 'unknown' errors with toFixed. */}
+                                  <p className="text-sm font-black text-amber-500">S/ {Number(sales.cashBalance || 0).toFixed(2)}</p>
+                               </div>
+                               <div className="flex justify-between items-center pt-4 border-t border-gray-50">
+                                  <p className="text-[10px] font-black text-odoo-primary uppercase tracking-widest">Venta del Día</p>
+                                  {/* Using Number() to prevent 'unknown' errors with toFixed. */}
+                                  <p className="text-lg font-black text-gray-800">S/ {Number(sales.total || 0).toFixed(2)}</p>
                                </div>
                             </div>
-                            <div className="mt-4 pt-4 border-t border-gray-50 flex gap-2">
-                               <div className="p-2 bg-gray-50 rounded-xl text-odoo-primary group-hover:bg-odoo-primary group-hover:text-white transition-all"><Banknote size={14}/></div>
-                               <div className="p-2 bg-gray-50 rounded-xl text-blue-500 group-hover:bg-blue-500 group-hover:text-white transition-all"><CreditCard size={14}/></div>
-                               <div className="p-2 bg-gray-50 rounded-xl text-purple-500 group-hover:bg-purple-500 group-hover:text-white transition-all"><Wallet size={14}/></div>
+
+                            <div className="mt-6 flex items-center justify-between">
+                               <div className="flex gap-1.5">
+                                  {Object.keys(sales.payments || {}).map((m, i) => (
+                                    <div key={i} className="w-2 h-2 rounded-full bg-odoo-primary/20" title={m}></div>
+                                  ))}
+                               </div>
+                               <ChevronRight size={18} className="text-gray-300 group-hover:text-odoo-primary transition-colors"/>
                             </div>
-                          </div>
+                          </button>
                         );
                       })}
                     </div>
                   </div>
 
+                  {/* Sidebar Analítico */}
                   <div className="space-y-8">
-                     <div className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm">
-                        <h3 className="text-[11px] font-black text-gray-800 uppercase tracking-widest mb-6 flex items-center gap-2"><TrendingUp size={18} className="text-odoo-success"/> LOS MÁS VENDIDOS</h3>
+                     {/* Detalle de Sede Seleccionada */}
+                     {selectedPosDetail ? (
+                       <div className="bg-white p-8 rounded-[3rem] border border-gray-100 shadow-xl o-animate-fade relative overflow-hidden">
+                          <div className="absolute top-0 right-0 w-32 h-32 bg-odoo-primary/5 rounded-full -mr-16 -mt-16"></div>
+                          <h3 className="text-sm font-black text-gray-800 uppercase tracking-widest mb-6 flex items-center gap-2">
+                             <PieChart size={20} className="text-odoo-primary"/> CIERRE DE CAJA
+                          </h3>
+                          <div className="space-y-6">
+                             <div className="p-4 bg-gray-50 rounded-2xl">
+                                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Botica Seleccionada</p>
+                                <p className="text-sm font-black text-odoo-primary uppercase">{selectedPosDetail.name}</p>
+                             </div>
+                             <div className="space-y-3">
+                                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Desglose de Pagos</p>
+                                {Object.entries(posSalesData[selectedPosDetail.id]?.payments || {}).map(([method, amount]: [string, any]) => (
+                                  <div key={method} className="flex justify-between items-center group">
+                                     <div className="flex items-center gap-3">
+                                        {method.toLowerCase().includes('efectivo') ? <Banknote size={16} className="text-green-500"/> : method.toLowerCase().includes('tarjeta') ? <CreditCard size={16} className="text-blue-500"/> : <Wallet size={16} className="text-purple-500"/>}
+                                        <span className="text-[11px] font-bold text-gray-600 group-hover:text-gray-900">{method}</span>
+                                     </div>
+                                     {/* Using Number() to prevent 'unknown' errors with toFixed. */}
+                                     <span className="text-[11px] font-black text-gray-800">S/ {Number(amount).toFixed(2)}</span>
+                                  </div>
+                                ))}
+                                {Object.keys(posSalesData[selectedPosDetail.id]?.payments || {}).length === 0 && (
+                                  <p className="text-center py-4 text-[10px] font-black text-gray-300 uppercase italic">Sin transacciones hoy</p>
+                                )}
+                             </div>
+                             <div className="pt-6 border-t border-gray-50">
+                                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Última Fecha de Cierre</p>
+                                <p className="text-xs font-black text-gray-600">{posSalesData[selectedPosDetail.id]?.lastClosing}</p>
+                             </div>
+                          </div>
+                       </div>
+                     ) : (
+                       <div className="bg-gray-100/50 p-12 rounded-[3rem] border border-dashed border-gray-200 text-center space-y-4">
+                          <Filter size={40} className="mx-auto text-gray-300"/>
+                          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Seleccione una botica para ver el desglose detallado</p>
+                       </div>
+                     )}
+
+                     {/* Ranking Global */}
+                     <div className="bg-gray-900 text-white p-8 rounded-[3rem] shadow-2xl">
+                        <h3 className="text-xs font-black uppercase tracking-[0.2em] mb-8 flex items-center gap-3">
+                           <TrendingUp size={20} className="text-odoo-success"/> TOP PRODUCTOS SJS
+                        </h3>
                         <div className="space-y-6">
                            {bestSellers.map((item, i) => (
                              <div key={i} className="flex items-center justify-between group">
                                 <div className="flex items-center gap-4">
-                                   <div className="w-10 h-10 bg-gray-50 rounded-xl flex items-center justify-center text-xs font-black text-gray-400 group-hover:bg-odoo-primary/10 group-hover:text-odoo-primary transition-all">#{i+1}</div>
-                                   <div className="max-w-[140px]">
-                                      <p className="text-[11px] font-black text-gray-700 uppercase truncate">{item.name}</p>
-                                      <p className="text-[9px] font-bold text-gray-400 uppercase">{item.qty} uds.</p>
+                                   <div className="w-9 h-9 bg-white/10 rounded-xl flex items-center justify-center text-[10px] font-black text-white group-hover:bg-odoo-success transition-all">{i+1}</div>
+                                   <div className="max-w-[120px]">
+                                      <p className="text-[10px] font-black uppercase truncate leading-none mb-1">{item.name}</p>
+                                      <p className="text-[9px] font-bold text-white/40 uppercase tracking-widest">{item.qty} vendidas</p>
                                    </div>
                                 </div>
-                                <div className="text-right">
-                                   <p className="text-[11px] font-black text-odoo-primary">S/ {item.total.toFixed(2)}</p>
-                                </div>
+                                {/* Using Number() to prevent 'unknown' errors with toFixed. */}
+                                <p className="text-[11px] font-black text-odoo-success">S/ {Number(item.total).toFixed(2)}</p>
                              </div>
                            ))}
-                           {bestSellers.length === 0 && (
-                             <p className="text-center py-10 text-[10px] font-black text-gray-300 uppercase italic">Sin datos de hoy</p>
-                           )}
-                        </div>
-                     </div>
-
-                     <div className="bg-odoo-primary p-8 rounded-[2.5rem] text-white shadow-xl shadow-odoo-primary/20">
-                        <div className="flex items-center gap-4 mb-6">
-                           <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center"><ShoppingBag size={24}/></div>
-                           <div>
-                              <p className="text-[10px] font-black text-white/60 uppercase tracking-widest">Venta Global</p>
-                              {/* Fix: Cast the result of reduce to number to resolve 'unknown' type error */}
-                              <p className="text-2xl font-black">S/ {(Object.values(posSalesData).reduce((a: any, b: any) => a + (b.total || 0), 0) as number).toFixed(2)}</p>
-                           </div>
-                        </div>
-                        <div className="space-y-3">
-                           <div className="flex justify-between text-[10px] font-black uppercase">
-                              <span>Tickets Totales</span>
-                              <span>{Object.values(posSalesData).reduce((a: number, b: any) => a + (b.orders || 0), 0)}</span>
-                           </div>
-                           <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
-                              <div className="h-full bg-white w-3/4"></div>
-                           </div>
                         </div>
                      </div>
                   </div>

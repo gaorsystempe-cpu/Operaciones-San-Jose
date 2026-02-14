@@ -71,6 +71,7 @@ const App: React.FC = () => {
     const dateEnd = end || reportDateEnd;
 
     try {
+      // 1. Obtener Configuraciones de POS
       const allConfigs = await client.searchRead('pos.config', [], ['name', 'id']);
       const filteredConfigs = allConfigs.filter((c: any) => {
         const name = c.name.toUpperCase();
@@ -78,21 +79,25 @@ const App: React.FC = () => {
                !name.includes('TIENDA') && !name.includes('CRUZ') && !name.includes('P&P');
       });
       setPosConfigs(filteredConfigs);
-
       const configIds = filteredConfigs.map((c: any) => c.id);
 
-      // CORRECCIÓN: Buscamos sesiones en el rango O sesiones que sigan ABIERTAS actualmente
+      // 2. Obtener Sesiones: ABIERTAS (en cualquier fecha) O Cerradas en el rango
       const sessions = await client.searchRead('pos.session', 
-        ['&', ['config_id', 'in', configIds], '|', ['state', '=', 'opened'], '&', ['start_at', '>=', dateStart + ' 00:00:00'], ['start_at', '<=', dateEnd + ' 23:59:59']], 
+        ['&', ['config_id', 'in', configIds], '|', ['state', 'not in', ['closed', 'closing_control']], '&', ['start_at', '>=', dateStart + ' 00:00:00'], ['start_at', '<=', dateEnd + ' 23:59:59']], 
         ['id', 'config_id', 'user_id', 'start_at', 'stop_at', 'cash_register_balance_start', 'cash_register_balance_end_real', 'state'],
         { order: 'id desc' }
       );
+      const sessionIds = sessions.map(s => s.id);
 
-      const orders = await client.searchRead('pos.order', 
-        [['date_order', '>=', dateStart + ' 00:00:00'], ['date_order', '<=', dateEnd + ' 23:59:59']], 
-        ['amount_total', 'session_id', 'config_id', 'payment_ids', 'user_id'],
-        { limit: 3000 }
-      );
+      // 3. Obtener Pedidos vinculados EXCLUSIVAMENTE a esas sesiones (Garantiza sincronía con Odoo)
+      let orders: any[] = [];
+      if (sessionIds.length > 0) {
+        orders = await client.searchRead('pos.order', 
+          [['session_id', 'in', sessionIds]], 
+          ['amount_total', 'session_id', 'config_id', 'payment_ids', 'user_id', 'date_order'],
+          { limit: 3000 }
+        );
+      }
 
       const paymentIds = orders.flatMap(o => o.payment_ids);
       let payments: any[] = [];
@@ -100,11 +105,15 @@ const App: React.FC = () => {
         payments = await client.searchRead('pos.payment', [['id', 'in', paymentIds]], ['amount', 'payment_method_id', 'pos_order_id', 'session_id']);
       }
 
-      const orderLines = await client.searchRead('pos.order.line', 
-        [['create_date', '>=', dateStart + ' 00:00:00'], ['create_date', '<=', dateEnd + ' 23:59:59']], 
-        ['product_id', 'qty', 'price_subtotal_incl', 'price_subtotal', 'order_id', 'session_id'],
-        { limit: 8000 }
-      );
+      // 4. Obtener Líneas de Pedido para análisis de rentabilidad
+      let orderLines: any[] = [];
+      if (sessionIds.length > 0) {
+        orderLines = await client.searchRead('pos.order.line', 
+          [['session_id', 'in', sessionIds]], 
+          ['product_id', 'qty', 'price_subtotal_incl', 'price_subtotal', 'order_id', 'session_id'],
+          { limit: 8000 }
+        );
+      }
 
       const uniqueProductIds = [...new Set(orderLines.map((l: any) => l.product_id[0]))];
       let productCosts: Record<number, number> = {};
@@ -117,9 +126,9 @@ const App: React.FC = () => {
       for (const config of filteredConfigs) {
         const configSessions = sessions.filter(s => s.config_id[0] === config.id);
         
-        // El estado real viene de si hay ALGUNA sesión en 'opened'
-        const hasActiveSession = configSessions.some(s => s.state === 'opened');
-        const latestSession = configSessions[0]; // La más reciente
+        // Identificar si tiene una sesión activa (Opened)
+        const activeSession = configSessions.find(s => s.state === 'opened' || s.state === 'opening_control');
+        const latestSession = configSessions[0];
         
         const processedSessions = configSessions.map(sess => {
           const sessionOrders = orders.filter(o => o.session_id[0] === sess.id);
@@ -179,8 +188,8 @@ const App: React.FC = () => {
         stats[config.id] = {
           day_total: configOrders.reduce((a, b) => a + b.amount_total, 0),
           day_order_count: configOrders.length,
-          isOpened: hasActiveSession,
-          openedBy: latestSession?.state === 'opened' ? (latestSession?.user_id?.[1] || '---') : '---',
+          isOpened: !!activeSession,
+          openedBy: activeSession ? activeSession.user_id[1] : '---',
           cashBalance: latestSession?.cash_register_balance_end_real || 0,
           sessions: processedSessions,
           lastClosing: latestSession?.stop_at ? new Date(latestSession.stop_at).toLocaleString('es-PE') : '---'
@@ -198,7 +207,8 @@ const App: React.FC = () => {
       setBestSellers(Object.values(items).sort((a: any, b: any) => b.qty - a.qty).slice(0, 10));
 
     } catch (e) {
-      console.error("Error en analítica SJS:", e);
+      console.error("Error analítica v18:", e);
+      setErrorLog("Fallo sincronización Odoo: Verifique conexión");
     } finally {
       setLoading(false);
     }
@@ -206,8 +216,6 @@ const App: React.FC = () => {
 
   const exportSessionExcel = (sess: any, configName: string) => {
     const wb = XLSX.utils.book_new();
-    
-    // Hoja 1: Resumen Financiero Integrado
     const resumenFinanciero = [
       { 'CAMPO': 'ID SESIÓN ODOO', 'VALOR': sess.id },
       { 'CAMPO': 'BOTICA', 'VALOR': configName },
@@ -224,13 +232,10 @@ const App: React.FC = () => {
       ...Object.entries(sess.users).map(([u, a]) => ({ 'CAMPO': u, 'VALOR': 'S/ ' + Number(a).toFixed(2) }))
     ];
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(resumenFinanciero), "Resumen Financiero");
-    
-    // Hoja 2: Rentabilidad Detallada de Productos
     if (sess.productAnalysis && sess.productAnalysis.length > 0) {
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sess.productAnalysis), "Rentabilidad de Productos");
     }
-
-    XLSX.writeFile(wb, `Auditoria_SJS_Sesion_${sess.id}_${configName}.xlsx`);
+    XLSX.writeFile(wb, `Audit_Sesion_${sess.id}_${configName}.xlsx`);
   };
 
   const exportConsolidadoExcel = () => {
@@ -241,11 +246,12 @@ const App: React.FC = () => {
         'Sede': config.name,
         'Venta Total Periodo': d.day_total || 0,
         'Tickets Periodo': d.day_order_count || 0,
-        'Estado Actual': d.isOpened ? 'ABIERTA' : 'CERRADA'
+        'Estado Actual': d.isOpened ? 'ABIERTA' : 'CERRADA',
+        'Responsable': d.openedBy || '---'
       };
     });
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Consolidado Red");
-    XLSX.writeFile(wb, `Consolidado_SanJose_${reportDateStart}.xlsx`);
+    XLSX.writeFile(wb, `Consolidado_SJS_${reportDateStart}.xlsx`);
   };
 
   const currentSessions = useMemo(() => {
@@ -471,11 +477,11 @@ const App: React.FC = () => {
                           <div key={config.id} className={`bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm transition-all text-left group ${selectedPosConfig?.id === config.id ? 'ring-4 ring-odoo-primary/10 border-odoo-primary' : 'hover:border-odoo-primary/30'}`}>
                             <div className="flex justify-between items-start mb-6">
                                <div className="flex items-center gap-3">
-                                  <div className={`w-3.5 h-3.5 rounded-full ${isOnline ? 'bg-odoo-success animate-pulse' : 'bg-gray-200'}`}></div>
+                                  <div className={`w-3.5 h-3.5 rounded-full ${isOnline ? 'bg-odoo-success animate-pulse shadow-[0_0_10px_rgba(0,160,157,0.5)]' : 'bg-gray-200'}`}></div>
                                   <h4 className="font-black text-gray-800 uppercase text-sm tracking-tight">{config.name}</h4>
                                </div>
                                <span className={`text-[9px] font-black px-3 py-1.5 rounded-xl uppercase tracking-widest ${isOnline ? 'bg-green-50 text-green-600' : 'bg-gray-50 text-gray-400'}`}>
-                                 {isOnline ? 'Abierta' : 'Cerrada'}
+                                 {isOnline ? 'ABIERTA' : 'CERRADA'}
                                </span>
                             </div>
                             <div className="space-y-4 cursor-pointer" onClick={() => { setSelectedPosConfig(config); setSelectedSessionId(null); }}>
@@ -497,20 +503,24 @@ const App: React.FC = () => {
                        <div className="bg-white p-8 rounded-[3rem] border border-gray-100 shadow-xl o-animate-fade space-y-8">
                           <div>
                             <h3 className="text-xs font-black text-gray-400 uppercase tracking-[0.2em] mb-4 flex items-center gap-2"><ListFilter size={16}/> TURNOS REGISTRADOS</h3>
-                            <div className="space-y-3 max-h-[300px] overflow-y-auto custom-scrollbar px-1">
+                            <div className="space-y-3 max-h-[400px] overflow-y-auto custom-scrollbar px-1">
                                {currentSessions.map((s: any) => (
                                  <button key={s.id} onClick={() => setSelectedSessionId(s.id)} className={`w-full p-4 rounded-2xl border text-left transition-all ${activeSession?.id === s.id ? 'bg-odoo-primary text-white border-odoo-primary shadow-lg' : 'bg-gray-50 border-transparent hover:bg-gray-100'}`}>
                                     <div className="flex justify-between items-start mb-2">
                                        <p className="text-[10px] font-black uppercase tracking-widest">Sesión #{s.id}</p>
-                                       <span className={`text-[8px] font-black px-2 py-1 rounded-lg uppercase ${s.state === 'opened' ? 'bg-green-500 text-white' : 'bg-gray-300 text-gray-600'}`}>{s.state === 'opened' ? 'ABIERTA' : 'CERRADA'}</span>
+                                       <span className={`text-[8px] font-black px-2 py-1 rounded-lg uppercase ${s.state === 'opened' || s.state === 'opening_control' ? 'bg-green-500 text-white animate-pulse' : 'bg-gray-300 text-gray-600'}`}>{s.state === 'opened' || s.state === 'opening_control' ? 'ABIERTA' : 'CERRADA'}</span>
                                     </div>
                                     <p className="text-xs font-black truncate">{s.user_id[1]}</p>
                                     <div className="flex justify-between items-end mt-3">
-                                       <span className="text-[9px] opacity-70 font-bold">{new Date(s.start_at).toLocaleDateString()} {new Date(s.start_at).toLocaleTimeString()}</span>
+                                       <div className="flex flex-col">
+                                          <span className="text-[8px] opacity-70 font-bold uppercase tracking-tighter">Apertura</span>
+                                          <span className="text-[9px] font-bold">{new Date(s.start_at).toLocaleDateString()} {new Date(s.start_at).toLocaleTimeString()}</span>
+                                       </div>
                                        <span className="text-sm font-black">S/ {s.total_vta.toFixed(2)}</span>
                                     </div>
                                  </button>
                                ))}
+                               {currentSessions.length === 0 && <p className="text-center py-10 text-[10px] font-black text-gray-300 uppercase italic">Sin turnos en el periodo</p>}
                             </div>
                           </div>
 
@@ -518,14 +528,14 @@ const App: React.FC = () => {
                             <div className="pt-8 border-t border-gray-100 space-y-8 o-animate-fade">
                                <div className="flex justify-between items-center">
                                   <h3 className="text-sm font-black text-gray-800 uppercase tracking-widest flex items-center gap-2"><PieChart size={20} className="text-odoo-primary"/> ARQUEO TURNO</h3>
-                                  <button onClick={() => exportSessionExcel(activeSession, selectedPosConfig.name)} className="bg-odoo-primary text-white px-4 py-2 rounded-xl font-black text-[10px] flex items-center gap-2 hover:brightness-110 shadow-lg">
+                                  <button onClick={() => exportSessionExcel(activeSession, selectedPosConfig.name)} className="bg-odoo-primary text-white px-4 py-2 rounded-xl font-black text-[10px] flex items-center gap-2 hover:brightness-110 shadow-lg active:scale-95 transition-all">
                                     <Download size={14}/> AUDITORÍA EXCEL
                                   </button>
                                </div>
 
                                <div className="space-y-4">
                                   <div className="flex justify-between items-center p-3 bg-amber-50 rounded-xl border border-amber-100">
-                                     <p className="text-[10px] font-black text-amber-700 uppercase">Apertura Caja</p>
+                                     <p className="text-[10px] font-black text-amber-700 uppercase">Inicio de Caja</p>
                                      <p className="text-xs font-black text-amber-700">S/ {activeSession.cash_register_balance_start.toFixed(2)}</p>
                                   </div>
                                   
@@ -555,13 +565,13 @@ const App: React.FC = () => {
 
                                   {activeSession.productAnalysis && (
                                     <div className="pt-6 border-t border-gray-50">
-                                       <h3 className="text-[11px] font-black text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2"><Target size={16}/> RENTABILIDAD REAL</h3>
+                                       <h3 className="text-[11px] font-black text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2"><Target size={16}/> UTILIDAD ESTIMADA</h3>
                                        <div className="p-4 bg-green-50 rounded-2xl border border-green-100 flex justify-between items-center">
                                           <div>
-                                            <p className="text-[8px] font-black text-green-700 uppercase">Utilidad Estimada</p>
+                                            <p className="text-[8px] font-black text-green-700 uppercase tracking-tighter">Margen Bruto Real</p>
                                             <p className="text-lg font-black text-green-800">S/ {activeSession.productAnalysis.reduce((acc: any, curr: any) => acc + curr['Ganancia (S/)'], 0).toFixed(2)}</p>
                                           </div>
-                                          <TrendingUpIcon size={24} className="text-green-500 opacity-30"/>
+                                          <TrendingUpIcon size={24} className="text-green-500 opacity-40"/>
                                        </div>
                                     </div>
                                   )}
@@ -572,7 +582,7 @@ const App: React.FC = () => {
                      ) : (
                        <div className="bg-gray-100/50 p-12 rounded-[3rem] border border-dashed border-gray-200 text-center">
                           <Filter size={40} className="mx-auto text-gray-300 mb-4"/>
-                          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Seleccione una botica para auditar turnos y estados reales</p>
+                          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Seleccione una botica para auditar turnos sincronizados en tiempo real</p>
                        </div>
                      )}
                   </div>

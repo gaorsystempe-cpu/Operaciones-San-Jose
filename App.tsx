@@ -30,7 +30,7 @@ const App: React.FC = () => {
 
   const [view, setView] = useState<'login' | 'app'>('login');
   const [session, setSession] = useState<any | null>(null);
-  const [activeTab, setActiveTab] = useState('ventas'); // Default a Ventas/Auditoria para el usuario
+  const [activeTab, setActiveTab] = useState('ventas');
   const [loading, setLoading] = useState(false);
   const [lastSync, setLastSync] = useState("");
   const [errorLog, setErrorLog] = useState<string | null>(null);
@@ -61,7 +61,7 @@ const App: React.FC = () => {
       if (!companies || !companies.length) throw new Error("Compañía San José no encontrada.");
       const sanJoseId = companies[0].id;
 
-      // 1. Obtener Configuraciones de POS
+      // ODOO v14 compatible POS Configs
       const configs = await client.searchRead('pos.config', 
         [['company_id', '=', sanJoseId]], 
         ['name', 'id', 'current_session_id', 'current_session_state']
@@ -73,7 +73,12 @@ const App: React.FC = () => {
       );
       setPosConfigs(filteredConfigs);
 
-      // 2. Obtener Sesiones (incluyendo cerradas hoy para no perder datos)
+      // ODOO v14 compatible Warehouses
+      const ws = await client.searchRead('stock.warehouse', [['company_id', '=', sanJoseId]], ['name', 'id', 'lot_stock_id', 'company_id']);
+      setWarehouses((ws || []).filter((w: any) => !blacklist.some(term => w.name.toUpperCase().includes(term))));
+
+      // AJUSTE DE FECHAS PARA v14 (Odoo v14 es UTC estricto)
+      // Buscamos sesiones que iniciaron en el rango de fecha
       const sessions = await client.searchRead('pos.session', [
         ['config_id', 'in', filteredConfigs.map(c => c.id)],
         ['start_at', '>=', `${dateRange.start} 00:00:00`], 
@@ -82,50 +87,46 @@ const App: React.FC = () => {
 
       const sessionIds = sessions.map(s => s.id);
 
-      // 3. Obtener Pedidos y sus líneas (Para el margen)
+      // ODOO v14 Orders
       const orders = sessionIds.length > 0 ? await client.searchRead('pos.order',
         [['session_id', 'in', sessionIds]],
-        ['id', 'session_id', 'amount_total', 'amount_tax', 'state']
+        ['id', 'session_id', 'amount_total', 'amount_tax', 'state', 'date_order']
       ) : [];
 
-      // 4. Obtener líneas de pedido con campos de costo
-      // Intentamos traer purchase_price si existe el modulo de margen, si no, lo calcularemos con standard_price de productos
       const orderIds = (orders || []).map(o => o.id);
+      
+      // ODOO v14 Order Lines
       const orderLines = orderIds.length > 0 ? await client.searchRead('pos.order.line',
         [['order_id', 'in', orderIds]],
         ['product_id', 'qty', 'price_subtotal_incl', 'order_id']
       ) : [];
 
-      // 5. Sincronización de costos de productos (Contexto de compañía San José)
+      // Recuperar costos para el margen (v14 standard_price)
       const productIds = Array.from(new Set((orderLines || []).map(l => Array.isArray(l.product_id) ? l.product_id[0] : null).filter(Boolean)));
-      
       let costsMap: Record<number, number> = {};
       if (productIds.length > 0) {
-        // FORZAMOS el contexto de la compañía para que Odoo devuelva el costo real de San José
         const productCostsData = await client.rpcCall('object', 'execute_kw', [
           config.db, (client as any).uid, config.apiKey,
           'product.product', 'read',
           [productIds, ['standard_price']],
-          { context: { company_id: sanJoseId } }
+          {}
         ]);
         (productCostsData || []).forEach((p: any) => costsMap[p.id] = p.standard_price || 0);
       }
 
-      // 6. Pagos por método (para el cuadre de caja)
+      // ODOO v14 Payments
       const payments = sessionIds.length > 0 ? await client.searchRead('pos.payment', 
         [['session_id', 'in', sessionIds]], 
         ['amount', 'payment_method_id', 'session_id']
       ) : [];
 
-      // 7. Consolidación de Data Final
+      // Consolidación de datos compatible
       const stats: any = {};
       filteredConfigs.forEach(conf => {
         const confSessions = sessions.filter(s => s.config_id && s.config_id[0] === conf.id);
         const confSessionIds = confSessions.map(s => s.id);
         
         const latestSession = confSessions[0];
-        const stateKey = conf.current_session_state || (latestSession ? latestSession.state : 'false');
-        
         const stateMapping: any = {
           'opened': 'ABIERTO',
           'opening_control': 'ABRIENDO',
@@ -137,8 +138,7 @@ const App: React.FC = () => {
         const posOrders = (orders || []).filter(o => o.session_id && confSessionIds.includes(o.session_id[0]));
         const totalSales = posOrders.reduce((acc, curr) => acc + (curr.amount_total || 0), 0);
         
-        const posOrderIds = posOrders.map(o => o.id);
-        const posLines = (orderLines || []).filter(l => l.order_id && posOrderIds.includes(l.order_id[0]));
+        const posLines = (orderLines || []).filter(l => l.order_id && posOrders.map(o => o.id).includes(l.order_id[0]));
         
         let totalCost = 0;
         const productStats: any = {};
@@ -157,17 +157,16 @@ const App: React.FC = () => {
           productStats[pName].margin = productStats[pName].total - productStats[pName].cost;
         });
 
-        // Pagos
         const posPayments = (payments || []).filter(p => p.session_id && confSessionIds.includes(p.session_id[0]));
         const methodStats: any = {};
         posPayments.forEach(p => {
-          const mName = Array.isArray(p.payment_method_id) ? p.payment_method_id[1] : 'Otros';
+          const mName = Array.isArray(p.payment_method_id) ? p.payment_method_id[1] : 'Efectivo';
           methodStats[mName] = (methodStats[mName] || 0) + p.amount;
         });
 
         stats[conf.id] = {
-          isOnline: stateKey === 'opened' || stateKey === 'opening_control',
-          rawState: stateMapping[stateKey] || stateKey.toUpperCase(),
+          isOnline: conf.current_session_id || (latestSession && latestSession.state === 'opened'),
+          rawState: stateMapping[conf.current_session_state] || (latestSession ? stateMapping[latestSession.state] : 'SIN ACTIVIDAD'),
           totalSales: totalSales,
           totalCost: totalCost,
           margin: totalSales - totalCost,
@@ -183,8 +182,8 @@ const App: React.FC = () => {
       setPosSalesData(stats);
       setLastSync(new Date().toLocaleTimeString('es-PE'));
     } catch (e: any) { 
-      console.error("Critical Sync Error:", e);
-      setErrorLog(e.message || "Error al sincronizar datos de Odoo."); 
+      console.error("v14 Sync Error:", e);
+      setErrorLog(e.message); 
     } finally { setLoading(false); }
   }, [client, view, dateRange, config.companyName, config.db, config.apiKey]);
 
@@ -196,7 +195,7 @@ const App: React.FC = () => {
     setErrorLog(null);
     try {
       const uid = await client.authenticate(config.user, config.apiKey);
-      if (!uid) throw new Error("Acceso denegado. Verifique su API Key.");
+      if (!uid) throw new Error("API Key no válida para v14.");
       const user = await client.searchRead('res.users', [['login', '=', loginInput]], ['name'], { limit: 1 });
       if (!user || !user.length) throw new Error("Usuario no encontrado.");
       setSession({ name: user[0].name });
@@ -206,13 +205,13 @@ const App: React.FC = () => {
 
   if (view === 'login') return (
     <div className="h-screen bg-[#F0F2F5] flex items-center justify-center p-6 text-odoo-text">
-      <div className="bg-white w-full max-w-[440px] shadow-2xl rounded-sm border-t-4 border-odoo-primary overflow-hidden">
+      <div className="bg-white w-full max-w-[440px] shadow-2xl rounded border-t-4 border-odoo-primary">
         <div className="p-10 space-y-8 text-center">
-          <div className="w-24 h-24 bg-odoo-primary rounded-lg flex items-center justify-center text-white text-5xl font-bold italic mx-auto shadow-inner">SJ</div>
-          <h1 className="text-xl font-black text-gray-800 uppercase">San José BI Hub</h1>
-          <form onSubmit={handleLogin} className="space-y-6">
-            <input type="text" className="w-full p-4 bg-gray-50 border border-gray-300 rounded font-bold focus:border-odoo-primary outline-none" placeholder="ID Usuario Odoo" value={loginInput} onChange={e => setLoginInput(e.target.value)} required />
-            <button className="w-full bg-odoo-primary text-white py-4 rounded font-black uppercase tracking-widest hover:bg-[#5a3c52] transition-colors">{loading ? <Loader2 className="animate-spin mx-auto"/> : 'Entrar al Sistema'}</button>
+          <div className="w-20 h-20 bg-odoo-primary rounded-xl flex items-center justify-center text-white text-4xl font-bold italic mx-auto">SJ</div>
+          <h1 className="text-xl font-black text-gray-800 uppercase tracking-tighter">Acceso Auditoría v14</h1>
+          <form onSubmit={handleLogin} className="space-y-5">
+            <input type="text" className="w-full p-4 bg-gray-50 border rounded font-bold focus:border-odoo-primary outline-none" placeholder="Usuario" value={loginInput} onChange={e => setLoginInput(e.target.value)} required />
+            <button className="w-full bg-odoo-primary text-white py-4 rounded font-black uppercase tracking-widest hover:bg-[#5a3c52] transition-colors">Entrar</button>
           </form>
           {errorLog && <div className="text-red-600 text-[10px] font-black uppercase bg-red-50 p-4 rounded border border-red-100">{errorLog}</div>}
         </div>
@@ -224,39 +223,44 @@ const App: React.FC = () => {
     <div className="h-screen flex flex-col bg-[#F4F7FA] text-odoo-text">
       <header className="h-14 bg-odoo-primary text-white flex items-center justify-between px-6 shrink-0 shadow-lg z-50">
         <div className="flex items-center gap-8 h-full">
-          <div className="flex items-center gap-3 font-black h-full cursor-pointer"><div className="w-8 h-8 bg-white rounded-sm flex items-center justify-center text-odoo-primary text-sm font-black italic shadow-sm">SJ</div><span className="text-sm tracking-tight uppercase">BI San José</span></div>
-          {[{id:'dashboard', label:'Dashboard'}, {id:'ventas', label:'Auditoría'}, {id:'pedidos', label:'Logística'}].map(tab => (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`px-5 h-full flex items-center text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === tab.id ? 'bg-white/10 border-b-4 border-white' : 'opacity-60 hover:opacity-100'}`}>{tab.label}</button>
+          <div className="flex items-center gap-3 font-black h-full"><div className="w-8 h-8 bg-white rounded flex items-center justify-center text-odoo-primary text-xs font-black italic shadow-sm">SJ</div><span className="text-sm tracking-tight uppercase">BI San José</span></div>
+          {['dashboard', 'ventas', 'pedidos'].map(id => (
+            <button key={id} onClick={() => setActiveTab(id)} className={`px-5 h-full flex items-center text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === id ? 'bg-white/10 border-b-4 border-white' : 'opacity-60 hover:opacity-100'}`}>{id}</button>
           ))}
         </div>
-        <div className="flex items-center gap-4 h-full">
-          <span className="text-[10px] font-black uppercase tracking-wider">{session?.name}</span>
-          <button onClick={() => setView('login')} className="px-5 h-full hover:bg-red-500/30 transition-colors"><LogOut size={16}/></button>
+        <div className="flex items-center gap-4">
+          <span className="text-[10px] font-black uppercase">{session?.name}</span>
+          <button onClick={() => setView('login')} className="p-2 hover:bg-red-500/20 rounded"><LogOut size={16}/></button>
         </div>
       </header>
       <div className="flex-1 flex overflow-hidden">
-        <aside className="w-72 bg-white border-r border-gray-200 hidden md:flex flex-col shrink-0 shadow-sm">
-          <div className="p-6 border-b bg-gray-50/50 space-y-6">
-            <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Controles de Fecha</h3>
-            <div className="space-y-3">
-              <input type="date" value={dateRange.start} onChange={e => setDateRange({...dateRange, start: e.target.value})} className="w-full p-2.5 text-xs border rounded font-bold outline-none focus:border-odoo-primary"/>
-              <input type="date" value={dateRange.end} onChange={e => setDateRange({...dateRange, end: e.target.value})} className="w-full p-2.5 text-xs border rounded font-bold outline-none focus:border-odoo-primary"/>
-              <button onClick={fetchData} className="w-full p-3 bg-odoo-primary text-white rounded text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-[#5a3c52] transition-all">
-                <RefreshCw size={14} className={loading ? 'animate-spin' : ''}/> Actualizar Odoo
+        <aside className="w-64 bg-white border-r border-gray-200 hidden md:flex flex-col shrink-0">
+          <div className="p-6 space-y-6">
+            <h3 className="text-[9px] font-black text-gray-400 uppercase tracking-[0.2em]">Rango de Auditoría</h3>
+            <div className="space-y-4">
+              <div className="space-y-1">
+                 <label className="text-[8px] font-black text-gray-400 uppercase">Desde</label>
+                 <input type="date" value={dateRange.start} onChange={e => setDateRange({...dateRange, start: e.target.value})} className="w-full p-2 text-xs border rounded font-bold outline-none focus:border-odoo-primary"/>
+              </div>
+              <div className="space-y-1">
+                 <label className="text-[8px] font-black text-gray-400 uppercase">Hasta</label>
+                 <input type="date" value={dateRange.end} onChange={e => setDateRange({...dateRange, end: e.target.value})} className="w-full p-2 text-xs border rounded font-bold outline-none focus:border-odoo-primary"/>
+              </div>
+              <button onClick={fetchData} className="w-full p-3 bg-odoo-primary text-white rounded text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2">
+                <RefreshCw size={14} className={loading ? 'animate-spin' : ''}/> Sincronizar
               </button>
             </div>
           </div>
         </aside>
-        <main className="flex-1 overflow-y-auto p-10 custom-scrollbar relative bg-[#f1f4f9]">
+        <main className="flex-1 overflow-y-auto p-8 custom-scrollbar relative">
           {activeTab === 'dashboard' && <Dashboard posConfigs={posConfigs} posSalesData={posSalesData} lastSync={lastSync} />}
           {activeTab === 'ventas' && <AuditModule posConfigs={posConfigs} posSalesData={posSalesData} onSelect={setSelectedPos} selectedPos={setSelectedPos} onCloseDetail={() => setSelectedPos(null)} />}
-          {activeTab === 'pedidos' && <OrderModule productSearch={productSearch} setProductSearch={setProductSearch} onSearch={() => {}} products={products} cart={cart} setCart={setCart} warehouses={warehouses} targetWarehouseId={targetWarehouseId} setTargetWarehouseId={() => {}} onSubmitOrder={() => {}} loading={loading} />}
         </main>
       </div>
       {loading && (
-        <div className="fixed bottom-8 right-8 z-[200] bg-white px-8 py-5 rounded shadow-2xl border-l-4 border-odoo-primary flex items-center gap-5 animate-in slide-in-from-right">
-          <Loader2 className="animate-spin text-odoo-primary" size={24}/>
-          <p className="text-[11px] font-black uppercase text-gray-800 tracking-widest">Consultando Odoo v18...</p>
+        <div className="fixed bottom-6 right-6 z-[200] bg-white px-6 py-4 rounded shadow-2xl border-l-4 border-odoo-primary flex items-center gap-4 animate-in slide-in-from-bottom">
+          <Loader2 className="animate-spin text-odoo-primary" size={20}/>
+          <p className="text-[10px] font-black uppercase text-gray-800 tracking-widest">Leyendo Odoo v14...</p>
         </div>
       )}
     </div>

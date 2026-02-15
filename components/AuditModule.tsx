@@ -26,8 +26,8 @@ export const AuditModule: React.FC<AuditModuleProps> = ({ posConfigs, posSalesDa
         'Margen %': d?.totalSales > 0 ? ((d.margin / d.totalSales) * 100).toFixed(2) + '%' : '0%',
       };
     });
-    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(globalSummary), "Auditoria_SJ");
-    XLSX.writeFile(workbook, `Auditoria_v14_${new Date().toISOString().split('T')[0]}.xlsx`);
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(globalSummary), "Reporte_Auditoria");
+    XLSX.writeFile(workbook, `Reporte_SanJose_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   return (
@@ -35,15 +35,15 @@ export const AuditModule: React.FC<AuditModuleProps> = ({ posConfigs, posSalesDa
       <div className="bg-white border border-gray-200 rounded p-6 flex justify-between items-center shadow-sm">
         <div className="space-y-1">
           <h3 className="font-black text-gray-800 flex items-center gap-3 uppercase text-sm tracking-widest">
-            <TrendingUp size={22} className="text-odoo-primary"/> Monitor Auditoría v14 Community
+            <TrendingUp size={22} className="text-odoo-primary"/> Monitor de Rentabilidad
           </h3>
-          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Boticas San José - Rentabilidad en tiempo real</p>
+          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Análisis Operativo San José - Datos Consolidados</p>
         </div>
         <button 
           onClick={exportGlobalBIReport}
           className="bg-odoo-primary hover:bg-[#5a3c52] text-white px-6 py-3 rounded text-[10px] font-black uppercase tracking-widest shadow-md transition-all active:scale-95 flex items-center gap-2"
         >
-          <Download size={16} /> Excel Resumen
+          <Download size={16} /> Excel Consolidado
         </button>
       </div>
       
@@ -99,7 +99,7 @@ export const AuditModule: React.FC<AuditModuleProps> = ({ posConfigs, posSalesDa
                    </div>
                    <div>
                       <h3 className="text-sm font-black text-gray-800 uppercase tracking-tight">{selectedPos.name}</h3>
-                      <p className="text-[9px] font-black text-odoo-primary uppercase mt-1">Detalle Auditoría v14</p>
+                      <p className="text-[9px] font-black text-odoo-primary uppercase mt-1">Detalle de Operaciones</p>
                    </div>
                 </div>
                 <button 
@@ -155,7 +155,7 @@ export const AuditModule: React.FC<AuditModuleProps> = ({ posConfigs, posSalesDa
                           <div key={idx} className="p-4 flex justify-between items-center hover:bg-gray-50 transition-all">
                              <div className="max-w-[70%]">
                                 <p className="text-[10px] font-black text-gray-700 uppercase truncate tracking-tight">{p.name}</p>
-                                <p className="text-[8px] font-bold text-gray-400 uppercase mt-0.5">{p.qty} Unid | Costo Odoo: S/ {(p.cost / (p.qty || 1)).toFixed(2)}</p>
+                                <p className="text-[8px] font-bold text-gray-400 uppercase mt-0.5">{p.qty} Unid | Costo: S/ {(p.cost / (p.qty || 1)).toFixed(2)}</p>
                              </div>
                              <div className="text-right">
                                 <span className={`text-[11px] font-black ${p.margin > 0 ? 'text-green-600' : 'text-red-500'}`}>
@@ -171,7 +171,7 @@ export const AuditModule: React.FC<AuditModuleProps> = ({ posConfigs, posSalesDa
 
              <div className="p-6 border-t bg-gray-50">
                 <button 
-                  onClick={() => alert("Función para v14 en desarrollo...")}
+                  onClick={() => alert("Generando reporte...")}
                   className="w-full bg-odoo-primary hover:bg-[#5a3c52] text-white py-4 rounded font-black text-[10px] uppercase tracking-[0.2em] shadow-lg flex items-center justify-center gap-3 transition-all"
                 >
                   <FileSpreadsheet size={18}/> Descargar Reporte de Sede

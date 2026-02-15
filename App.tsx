@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   LogOut, RefreshCw, User as UserIcon, Loader2, 
-  LayoutDashboard, Truck, TrendingUp, AlertTriangle, Calendar, DollarSign
+  LayoutDashboard, Truck, TrendingUp, AlertTriangle, Calendar, DollarSign, ExternalLink
 } from 'lucide-react';
 import { OdooClient } from './services/odooService';
 import { AppConfig } from './types';
@@ -61,7 +61,6 @@ const App: React.FC = () => {
       if (!companies || !companies.length) throw new Error("Compañía San José no encontrada.");
       const sanJoseId = companies[0].id;
 
-      // ODOO v14 compatible POS Configs
       const configs = await client.searchRead('pos.config', 
         [['company_id', '=', sanJoseId]], 
         ['name', 'id', 'current_session_id', 'current_session_state']
@@ -73,12 +72,9 @@ const App: React.FC = () => {
       );
       setPosConfigs(filteredConfigs);
 
-      // ODOO v14 compatible Warehouses
       const ws = await client.searchRead('stock.warehouse', [['company_id', '=', sanJoseId]], ['name', 'id', 'lot_stock_id', 'company_id']);
       setWarehouses((ws || []).filter((w: any) => !blacklist.some(term => w.name.toUpperCase().includes(term))));
 
-      // AJUSTE DE FECHAS PARA v14 (Odoo v14 es UTC estricto)
-      // Buscamos sesiones que iniciaron en el rango de fecha
       const sessions = await client.searchRead('pos.session', [
         ['config_id', 'in', filteredConfigs.map(c => c.id)],
         ['start_at', '>=', `${dateRange.start} 00:00:00`], 
@@ -87,7 +83,6 @@ const App: React.FC = () => {
 
       const sessionIds = sessions.map(s => s.id);
 
-      // ODOO v14 Orders
       const orders = sessionIds.length > 0 ? await client.searchRead('pos.order',
         [['session_id', 'in', sessionIds]],
         ['id', 'session_id', 'amount_total', 'amount_tax', 'state', 'date_order']
@@ -95,13 +90,11 @@ const App: React.FC = () => {
 
       const orderIds = (orders || []).map(o => o.id);
       
-      // ODOO v14 Order Lines
       const orderLines = orderIds.length > 0 ? await client.searchRead('pos.order.line',
         [['order_id', 'in', orderIds]],
         ['product_id', 'qty', 'price_subtotal_incl', 'order_id']
       ) : [];
 
-      // Recuperar costos para el margen (v14 standard_price)
       const productIds = Array.from(new Set((orderLines || []).map(l => Array.isArray(l.product_id) ? l.product_id[0] : null).filter(Boolean)));
       let costsMap: Record<number, number> = {};
       if (productIds.length > 0) {
@@ -114,13 +107,11 @@ const App: React.FC = () => {
         (productCostsData || []).forEach((p: any) => costsMap[p.id] = p.standard_price || 0);
       }
 
-      // ODOO v14 Payments
       const payments = sessionIds.length > 0 ? await client.searchRead('pos.payment', 
         [['session_id', 'in', sessionIds]], 
         ['amount', 'payment_method_id', 'session_id']
       ) : [];
 
-      // Consolidación de datos compatible
       const stats: any = {};
       filteredConfigs.forEach(conf => {
         const confSessions = sessions.filter(s => s.config_id && s.config_id[0] === conf.id);
@@ -182,7 +173,7 @@ const App: React.FC = () => {
       setPosSalesData(stats);
       setLastSync(new Date().toLocaleTimeString('es-PE'));
     } catch (e: any) { 
-      console.error("v14 Sync Error:", e);
+      console.error("Sync Error:", e);
       setErrorLog(e.message); 
     } finally { setLoading(false); }
   }, [client, view, dateRange, config.companyName, config.db, config.apiKey]);
@@ -195,7 +186,7 @@ const App: React.FC = () => {
     setErrorLog(null);
     try {
       const uid = await client.authenticate(config.user, config.apiKey);
-      if (!uid) throw new Error("API Key no válida para v14.");
+      if (!uid) throw new Error("Acceso denegado. Verifique sus credenciales.");
       const user = await client.searchRead('res.users', [['login', '=', loginInput]], ['name'], { limit: 1 });
       if (!user || !user.length) throw new Error("Usuario no encontrado.");
       setSession({ name: user[0].name });
@@ -203,19 +194,42 @@ const App: React.FC = () => {
     } catch (e: any) { setErrorLog(e.message); } finally { setLoading(false); }
   };
 
+  const FooterInfo = () => (
+    <div className="flex flex-col items-center gap-1 opacity-60">
+      <p className="text-[9px] font-bold uppercase tracking-widest text-center">
+        © 2026 CADENA DE BOTICAS SAN JOSE S.A.C.
+      </p>
+      <a 
+        href="https://gaorsystem.vercel.app/" 
+        target="_blank" 
+        rel="noopener noreferrer"
+        className="text-[8px] font-black uppercase tracking-[0.2em] text-odoo-primary hover:underline flex items-center gap-1 transition-all"
+      >
+        Desarrollado por GAORSYSTEM PERU <ExternalLink size={8}/>
+      </a>
+    </div>
+  );
+
   if (view === 'login') return (
-    <div className="h-screen bg-[#F0F2F5] flex items-center justify-center p-6 text-odoo-text">
-      <div className="bg-white w-full max-w-[440px] shadow-2xl rounded border-t-4 border-odoo-primary">
+    <div className="h-screen bg-[#F0F2F5] flex flex-col items-center justify-center p-6 text-odoo-text">
+      <div className="bg-white w-full max-w-[440px] shadow-2xl rounded border-t-4 border-odoo-primary mb-8">
         <div className="p-10 space-y-8 text-center">
           <div className="w-20 h-20 bg-odoo-primary rounded-xl flex items-center justify-center text-white text-4xl font-bold italic mx-auto">SJ</div>
-          <h1 className="text-xl font-black text-gray-800 uppercase tracking-tighter">Acceso Auditoría v14</h1>
-          <form onSubmit={handleLogin} className="space-y-5">
-            <input type="text" className="w-full p-4 bg-gray-50 border rounded font-bold focus:border-odoo-primary outline-none" placeholder="Usuario" value={loginInput} onChange={e => setLoginInput(e.target.value)} required />
-            <button className="w-full bg-odoo-primary text-white py-4 rounded font-black uppercase tracking-widest hover:bg-[#5a3c52] transition-colors">Entrar</button>
+          <div className="space-y-1">
+            <h1 className="text-xl font-black text-gray-800 uppercase tracking-tighter">BOTICAS SAN JOSE</h1>
+            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Centro de Operaciones</p>
+          </div>
+          <form onSubmit={handleLogin} className="space-y-5 text-left">
+            <div className="space-y-2">
+               <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1">Usuario de Acceso</label>
+               <input type="text" className="w-full p-4 bg-gray-50 border border-gray-200 rounded font-bold focus:border-odoo-primary outline-none transition-all" placeholder="Ingrese su usuario" value={loginInput} onChange={e => setLoginInput(e.target.value)} required />
+            </div>
+            <button className="w-full bg-odoo-primary text-white py-4 rounded font-black uppercase tracking-widest hover:bg-[#5a3c52] transition-colors shadow-lg active:scale-95">Ingresar al Sistema</button>
           </form>
           {errorLog && <div className="text-red-600 text-[10px] font-black uppercase bg-red-50 p-4 rounded border border-red-100">{errorLog}</div>}
         </div>
       </div>
+      <FooterInfo />
     </div>
   );
 
@@ -223,44 +237,48 @@ const App: React.FC = () => {
     <div className="h-screen flex flex-col bg-[#F4F7FA] text-odoo-text">
       <header className="h-14 bg-odoo-primary text-white flex items-center justify-between px-6 shrink-0 shadow-lg z-50">
         <div className="flex items-center gap-8 h-full">
-          <div className="flex items-center gap-3 font-black h-full"><div className="w-8 h-8 bg-white rounded flex items-center justify-center text-odoo-primary text-xs font-black italic shadow-sm">SJ</div><span className="text-sm tracking-tight uppercase">BI San José</span></div>
-          {['dashboard', 'ventas', 'pedidos'].map(id => (
-            <button key={id} onClick={() => setActiveTab(id)} className={`px-5 h-full flex items-center text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === id ? 'bg-white/10 border-b-4 border-white' : 'opacity-60 hover:opacity-100'}`}>{id}</button>
+          <div className="flex items-center gap-3 font-black h-full cursor-pointer"><div className="w-8 h-8 bg-white rounded flex items-center justify-center text-odoo-primary text-xs font-black italic shadow-sm">SJ</div><span className="text-sm tracking-tight uppercase">BI San José</span></div>
+          {[{id:'dashboard', label:'Dashboard'}, {id:'ventas', label:'Auditoría'}, {id:'pedidos', label:'Logística'}].map(tab => (
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`px-5 h-full flex items-center text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === tab.id ? 'bg-white/10 border-b-4 border-white' : 'opacity-60 hover:opacity-100'}`}>{tab.label}</button>
           ))}
         </div>
-        <div className="flex items-center gap-4">
-          <span className="text-[10px] font-black uppercase">{session?.name}</span>
-          <button onClick={() => setView('login')} className="p-2 hover:bg-red-500/20 rounded"><LogOut size={16}/></button>
+        <div className="flex items-center gap-4 h-full">
+          <span className="text-[10px] font-black uppercase tracking-widest opacity-80">{session?.name}</span>
+          <button onClick={() => setView('login')} className="px-5 h-full hover:bg-red-500/20 transition-colors"><LogOut size={16}/></button>
         </div>
       </header>
       <div className="flex-1 flex overflow-hidden">
         <aside className="w-64 bg-white border-r border-gray-200 hidden md:flex flex-col shrink-0">
-          <div className="p-6 space-y-6">
-            <h3 className="text-[9px] font-black text-gray-400 uppercase tracking-[0.2em]">Rango de Auditoría</h3>
+          <div className="p-6 space-y-6 flex-1">
+            <h3 className="text-[9px] font-black text-gray-400 uppercase tracking-[0.2em]">Filtros de Período</h3>
             <div className="space-y-4">
               <div className="space-y-1">
-                 <label className="text-[8px] font-black text-gray-400 uppercase">Desde</label>
-                 <input type="date" value={dateRange.start} onChange={e => setDateRange({...dateRange, start: e.target.value})} className="w-full p-2 text-xs border rounded font-bold outline-none focus:border-odoo-primary"/>
+                 <label className="text-[8px] font-black text-gray-400 uppercase">Fecha Inicio</label>
+                 <input type="date" value={dateRange.start} onChange={e => setDateRange({...dateRange, start: e.target.value})} className="w-full p-2.5 text-xs border border-gray-200 rounded font-bold outline-none focus:border-odoo-primary"/>
               </div>
               <div className="space-y-1">
-                 <label className="text-[8px] font-black text-gray-400 uppercase">Hasta</label>
-                 <input type="date" value={dateRange.end} onChange={e => setDateRange({...dateRange, end: e.target.value})} className="w-full p-2 text-xs border rounded font-bold outline-none focus:border-odoo-primary"/>
+                 <label className="text-[8px] font-black text-gray-400 uppercase">Fecha Fin</label>
+                 <input type="date" value={dateRange.end} onChange={e => setDateRange({...dateRange, end: e.target.value})} className="w-full p-2.5 text-xs border border-gray-200 rounded font-bold outline-none focus:border-odoo-primary"/>
               </div>
-              <button onClick={fetchData} className="w-full p-3 bg-odoo-primary text-white rounded text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2">
+              <button onClick={fetchData} className="w-full p-3 bg-odoo-primary text-white rounded text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-[#5a3c52] transition-all shadow-sm">
                 <RefreshCw size={14} className={loading ? 'animate-spin' : ''}/> Sincronizar
               </button>
             </div>
+          </div>
+          <div className="p-6 border-t border-gray-100">
+            <FooterInfo />
           </div>
         </aside>
         <main className="flex-1 overflow-y-auto p-8 custom-scrollbar relative">
           {activeTab === 'dashboard' && <Dashboard posConfigs={posConfigs} posSalesData={posSalesData} lastSync={lastSync} />}
           {activeTab === 'ventas' && <AuditModule posConfigs={posConfigs} posSalesData={posSalesData} onSelect={setSelectedPos} selectedPos={setSelectedPos} onCloseDetail={() => setSelectedPos(null)} />}
+          {activeTab === 'pedidos' && <OrderModule productSearch={productSearch} setProductSearch={setProductSearch} onSearch={() => {}} products={products} cart={cart} setCart={setCart} warehouses={warehouses} targetWarehouseId={targetWarehouseId} setTargetWarehouseId={() => {}} onSubmitOrder={() => {}} loading={loading} />}
         </main>
       </div>
       {loading && (
         <div className="fixed bottom-6 right-6 z-[200] bg-white px-6 py-4 rounded shadow-2xl border-l-4 border-odoo-primary flex items-center gap-4 animate-in slide-in-from-bottom">
           <Loader2 className="animate-spin text-odoo-primary" size={20}/>
-          <p className="text-[10px] font-black uppercase text-gray-800 tracking-widest">Leyendo Odoo v14...</p>
+          <p className="text-[10px] font-black uppercase text-gray-800 tracking-widest">Sincronizando con Servidor San José...</p>
         </div>
       )}
     </div>

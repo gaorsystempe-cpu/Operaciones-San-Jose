@@ -87,7 +87,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ posConfigs, posSalesData, 
                     </div>
                     <div className="bg-white/10 px-4 py-3 rounded-sm backdrop-blur-md flex-1 text-center border border-white/5">
                        <p className="text-[9px] font-black text-white/50 uppercase mb-1">Motor</p>
-                       <p className="text-[11px] font-black">ODOO V18 RPC</p>
+                       <p className="text-[11px] font-black">CONEXIÓN RPC</p>
                     </div>
                  </div>
               </div>

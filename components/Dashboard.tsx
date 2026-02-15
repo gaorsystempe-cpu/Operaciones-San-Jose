@@ -1,6 +1,6 @@
 
 import React, { useMemo } from 'react';
-import { Activity, Calendar, Wallet, Store, ShieldCheck, TrendingUp, DollarSign, PiggyBank, Package, Trophy, Star } from 'lucide-react';
+import { Activity, Calendar, Wallet, Store, ShieldCheck, TrendingUp, DollarSign, PiggyBank, Package, Trophy, Star, ChevronRight } from 'lucide-react';
 import { OdooStatCard } from './StatCard';
 
 interface DashboardProps {
@@ -16,7 +16,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ posConfigs, posSalesData, 
   
   const marginPercent = totalSales > 0 ? (totalMargin / totalSales) * 100 : 0;
 
-  // Cálculo de productos más vendidos globalmente
   const topProducts = useMemo(() => {
     const agg: Record<string, { qty: number, total: number }> = {};
     Object.values(posSalesData).forEach((pos: any) => {
@@ -33,86 +32,92 @@ export const Dashboard: React.FC<DashboardProps> = ({ posConfigs, posSalesData, 
   }, [posSalesData]);
 
   return (
-    <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500 pb-12">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <OdooStatCard title="Venta Bruta" value={`S/ ${totalSales.toLocaleString('es-PE', {minimumFractionDigits: 2})}`} icon={TrendingUp} active />
+    <div className="max-w-[1400px] mx-auto space-y-8 animate-fade pb-12">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <OdooStatCard title="Ventas Totales" value={`S/ ${totalSales.toLocaleString('es-PE', {minimumFractionDigits: 2})}`} icon={TrendingUp} active />
         <OdooStatCard title="Utilidad Bruta" value={`S/ ${totalMargin.toLocaleString('es-PE', {minimumFractionDigits: 2})}`} icon={PiggyBank} />
-        <OdooStatCard title="Margen Global" value={`${marginPercent.toFixed(1)}%`} icon={DollarSign} />
-        <OdooStatCard title="Cajas Activas" value={totalSessions} icon={Calendar} />
+        <OdooStatCard title="Rendimiento" value={`${marginPercent.toFixed(1)}%`} icon={Activity} />
+        <OdooStatCard title="Pedidos Hoy" value={totalSessions} icon={Package} />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* Monitor de Sedes */}
-        <div className="lg:col-span-7 bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden flex flex-col">
-          <div className="p-6 bg-gray-50 border-b flex justify-between items-center">
-             <div className="space-y-1">
-               <h3 className="text-sm font-black text-gray-800 flex items-center gap-3 uppercase tracking-wider">
-                 <Activity size={18} className="text-odoo-primary"/> Rendimiento por Botica
-               </h3>
-               <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Estado actual de ventas</p>
-             </div>
-             <div className="text-right">
-                <span className="text-[10px] font-black text-odoo-primary bg-odoo-primary/5 px-3 py-1.5 rounded-full uppercase tracking-widest">Hoy: {lastSync}</span>
-             </div>
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* Rendimiento Sedes Table-like */}
+        <div className="lg:col-span-8 bg-white border border-odoo-border rounded-odoo overflow-hidden flex flex-col shadow-sm">
+          <div className="px-6 py-4 border-b border-odoo-border flex justify-between items-center bg-gray-50/50">
+             <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2 uppercase tracking-tight">
+               <Store size={16} className="text-odoo-primary"/> Resumen por Botica
+             </h3>
+             <span className="text-[10px] font-bold text-gray-400 bg-white px-2 py-1 rounded border border-odoo-border">Última actualización: {lastSync}</span>
           </div>
-          <div className="divide-y divide-gray-100 max-h-[600px] overflow-y-auto custom-scrollbar bg-white">
-            {posConfigs.map(c => {
-              const data = posSalesData[c.id];
-              return (
-                <div key={c.id} className="p-6 flex items-center justify-between hover:bg-gray-50 transition-all group">
-                  <div className="flex items-center gap-5">
-                    <div className={`w-3 h-3 rounded-full ${data?.isOnline ? 'bg-green-500 animate-pulse ring-4 ring-green-100' : 'bg-gray-300'}`}></div>
-                    <div>
-                      <p className="text-[13px] font-black text-gray-800 uppercase tracking-tight group-hover:text-odoo-primary transition-colors">{c.name}</p>
-                      <p className="text-[9px] text-gray-400 font-black uppercase tracking-widest mt-1">
-                        {data?.rawState || 'SIN ACTIVIDAD'}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-base font-black text-gray-800">S/ {(data?.totalSales || 0).toLocaleString('es-PE', {minimumFractionDigits: 2})}</p>
-                    <p className="text-[9px] font-black text-green-600 uppercase tracking-widest mt-0.5">
-                       Rentab: {((data?.margin / (data?.totalSales || 1)) * 100).toFixed(1)}%
-                    </p>
-                  </div>
-                </div>
-              );
-            })}
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead className="bg-gray-50 text-[11px] font-black text-gray-400 uppercase tracking-wider border-b border-odoo-border">
+                <tr>
+                  <th className="px-6 py-3">Sede</th>
+                  <th className="px-6 py-3">Estado</th>
+                  <th className="px-6 py-3 text-right">Venta Bruta</th>
+                  <th className="px-6 py-3 text-right">Margen %</th>
+                  <th className="px-6 py-3"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {posConfigs.map(c => {
+                  const data = posSalesData[c.id];
+                  const margin = data?.totalSales > 0 ? ((data.margin / data.totalSales) * 100) : 0;
+                  return (
+                    <tr key={c.id} className="hover:bg-gray-50 transition-colors group">
+                      <td className="px-6 py-4">
+                        <span className="text-sm font-bold text-gray-700 uppercase">{c.name}</span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2">
+                           <div className={`w-2 h-2 rounded-full ${data?.isOnline ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+                           <span className="text-[11px] font-semibold text-gray-500 uppercase">{data?.rawState || 'S/A'}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <span className="text-sm font-bold text-gray-800">S/ {(data?.totalSales || 0).toLocaleString('es-PE', {minimumFractionDigits: 2})}</span>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <span className={`text-xs font-bold ${margin > 20 ? 'text-green-600' : 'text-amber-600'}`}>
+                          {margin.toFixed(1)}%
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                         <ChevronRight size={14} className="text-gray-300 group-hover:text-odoo-primary transition-colors inline" />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
 
-        {/* Productos Más Vendidos */}
-        <div className="lg:col-span-5 bg-white border border-gray-200 rounded-xl shadow-sm flex flex-col overflow-hidden">
-          <div className="p-6 bg-odoo-primary text-white border-b flex items-center gap-4">
-             <div className="p-3 bg-white/20 rounded-lg">
-                <Trophy size={24} className="text-amber-300"/>
-             </div>
-             <div>
-                <h3 className="text-sm font-black uppercase tracking-widest">Top Productos del Día</h3>
-                <p className="text-[9px] text-white/60 font-bold uppercase tracking-widest">Lo más vendido en San José</p>
-             </div>
+        {/* Top Products Card */}
+        <div className="lg:col-span-4 bg-white border border-odoo-border rounded-odoo shadow-sm flex flex-col overflow-hidden">
+          <div className="px-6 py-4 border-b border-odoo-border bg-odoo-primary text-white flex items-center justify-between">
+             <h3 className="text-sm font-bold uppercase tracking-tight flex items-center gap-2">
+               <Trophy size={16} /> Top 15 Productos
+             </h3>
+             <Star size={14} className="text-amber-300" />
           </div>
-          <div className="divide-y divide-gray-100 max-h-[600px] overflow-y-auto custom-scrollbar">
+          <div className="divide-y divide-gray-50 max-h-[600px] overflow-y-auto custom-scrollbar">
              {topProducts.length === 0 ? (
-                <div className="p-24 text-center opacity-30 flex flex-col items-center gap-4">
-                   <Package size={48} className="text-gray-400"/>
-                   <p className="text-[10px] font-black uppercase tracking-widest">Esperando ventas del día...</p>
+                <div className="p-16 text-center">
+                   <Package size={32} className="text-gray-200 mx-auto mb-2"/>
+                   <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">Sin ventas registradas</p>
                 </div>
              ) : topProducts.map((p, idx) => (
-               <div key={idx} className="p-5 flex items-center gap-5 hover:bg-gray-50 transition-all group">
-                  <div className="w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center text-[12px] font-black text-gray-400 group-hover:bg-odoo-primary group-hover:text-white transition-all shadow-sm border border-gray-100">
-                     {idx + 1}
+               <div key={idx} className="p-4 flex items-center gap-4 hover:bg-gray-50 transition-colors">
+                  <div className="w-8 h-8 rounded bg-gray-100 flex items-center justify-center text-[10px] font-bold text-gray-500">
+                     #{idx + 1}
                   </div>
                   <div className="flex-1 min-w-0">
-                     <p className="text-[11px] font-black text-gray-800 uppercase truncate tracking-tight">{p.name}</p>
-                     <div className="flex items-center gap-4 mt-1">
-                        <span className="flex items-center gap-1.5 text-[9px] font-black text-odoo-primary uppercase bg-odoo-primary/5 px-2 py-0.5 rounded-full">
-                           <Star size={10} className="fill-odoo-primary"/> {p.qty} UND
-                        </span>
-                        <span className="text-[9px] font-bold text-gray-400 uppercase">
-                           Total: S/ {p.total.toLocaleString('es-PE', {minimumFractionDigits: 2})}
-                        </span>
-                     </div>
+                     <p className="text-xs font-bold text-gray-700 uppercase truncate">{p.name}</p>
+                     <p className="text-[10px] font-medium text-gray-400 mt-0.5">
+                        {p.qty} Unidades · S/ {p.total.toLocaleString('es-PE', {minimumFractionDigits: 2})}
+                     </p>
                   </div>
                </div>
              ))}

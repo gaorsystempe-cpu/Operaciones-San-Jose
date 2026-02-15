@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { TrendingUp, FileSpreadsheet, Store, X, Package, ListChecks, Download, AlertCircle, Info } from 'lucide-react';
+import { TrendingUp, FileSpreadsheet, Store, X, Package, ListChecks, Download, AlertCircle, Info, ChevronRight } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 interface AuditModuleProps {
@@ -30,23 +30,20 @@ export const AuditModule: React.FC<AuditModuleProps> = ({ posConfigs, posSalesDa
     XLSX.writeFile(workbook, `Reporte_SanJose_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
-  // Obtener datos del POS seleccionado de forma segura
   const currentData = selectedPos ? posSalesData[selectedPos.id] : null;
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6 pb-20">
-      <div className="bg-white border border-gray-200 rounded p-6 flex justify-between items-center shadow-sm">
-        <div className="space-y-1">
-          <h3 className="font-black text-gray-800 flex items-center gap-3 uppercase text-sm tracking-widest">
-            <TrendingUp size={22} className="text-odoo-primary"/> Monitor de Rentabilidad
-          </h3>
-          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Análisis Operativo San José - Datos Consolidados</p>
+    <div className="max-w-[1400px] mx-auto space-y-6 pb-20 animate-fade">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-4 border border-odoo-border rounded shadow-sm">
+        <div>
+          <h2 className="text-xl font-bold text-gray-700 uppercase">Monitor de Auditoría</h2>
+          <p className="text-xs font-semibold text-gray-400 mt-1 uppercase tracking-widest">Análisis Operativo Consolidado</p>
         </div>
         <button 
           onClick={exportGlobalBIReport}
-          className="bg-odoo-primary hover:bg-[#5a3c52] text-white px-6 py-3 rounded text-[10px] font-black uppercase tracking-widest shadow-md transition-all active:scale-95 flex items-center gap-2"
+          className="o-btn o-btn-primary gap-2"
         >
-          <Download size={16} /> Excel Consolidado
+          <Download size={16} /> Descargar Excel Consolidado
         </button>
       </div>
       
@@ -54,37 +51,29 @@ export const AuditModule: React.FC<AuditModuleProps> = ({ posConfigs, posSalesDa
         {posConfigs.map(c => {
           const data = posSalesData[c.id];
           const isOnline = data?.isOnline;
-          const hasZeroCosts = data?.totalSales > 0 && data?.totalCost === 0;
 
           return (
             <div 
               key={c.id} 
               onClick={() => onSelect(c)} 
-              className={`bg-white border ${selectedPos?.id === c.id ? 'border-odoo-primary ring-2 ring-odoo-primary/10' : 'border-gray-200'} rounded shadow-sm hover:shadow-lg transition-all cursor-pointer overflow-hidden border-b-4 ${isOnline ? 'border-b-green-500' : 'border-b-gray-300'}`}
+              className={`bg-white border ${selectedPos?.id === c.id ? 'border-odoo-primary' : 'border-odoo-border'} rounded shadow-sm hover:shadow-lg transition-all cursor-pointer overflow-hidden group`}
             >
-              <div className="p-6 space-y-6">
-                <div className="flex justify-between items-start">
-                  <div className={`p-3 rounded-lg ${isOnline ? 'bg-green-50 text-green-600' : 'bg-gray-50 text-gray-400'}`}>
-                    <Store size={22}/>
+              <div className="p-5 flex items-center justify-between border-b border-gray-50">
+                 <div className="flex items-center gap-3">
+                   <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+                   <h4 className="font-bold text-gray-700 uppercase text-xs tracking-tight">{c.name}</h4>
+                 </div>
+                 <ChevronRight size={14} className="text-gray-300 group-hover:text-odoo-primary transition-all" />
+              </div>
+              <div className="p-5 grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-tighter">Venta Bruta</p>
+                    <p className="text-base font-bold text-gray-800">S/ {(data?.totalSales || 0).toLocaleString('es-PE', {minimumFractionDigits: 2})}</p>
                   </div>
-                  <span className={`text-[8px] font-black px-2 py-1 rounded uppercase ${isOnline ? 'bg-green-500 text-white animate-pulse' : 'bg-gray-100 text-gray-500'}`}>
-                    {data?.rawState || 'S/A'}
-                  </span>
-                </div>
-                <div>
-                  <h4 className="font-black text-gray-800 uppercase text-xs truncate tracking-tight">{c.name}</h4>
-                  <p className="text-[9px] text-gray-400 font-bold uppercase mt-1 tracking-tighter">Sede Boticas San José</p>
-                </div>
-                <div className="grid grid-cols-2 gap-2 pt-2">
-                  <div className="bg-gray-50 p-3 rounded border border-gray-100">
-                    <p className="text-[8px] font-black text-gray-400 uppercase mb-1">Ventas</p>
-                    <p className="text-xs font-black text-gray-800">S/ {(data?.totalSales || 0).toLocaleString('es-PE', {minimumFractionDigits: 2})}</p>
+                  <div className="space-y-1">
+                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-tighter">Margen Bruto</p>
+                    <p className="text-base font-bold text-odoo-primary">S/ {(data?.margin || 0).toLocaleString('es-PE', {minimumFractionDigits: 2})}</p>
                   </div>
-                  <div className={`p-3 rounded border ${hasZeroCosts ? 'bg-amber-50 border-amber-100' : 'bg-green-50 border-green-100'}`}>
-                    <p className={`text-[8px] font-black uppercase mb-1 ${hasZeroCosts ? 'text-amber-600' : 'text-green-600'}`}>Margen</p>
-                    <p className={`text-xs font-black ${hasZeroCosts ? 'text-amber-700' : 'text-green-700'}`}>S/ {(data?.margin || 0).toLocaleString('es-PE', {minimumFractionDigits: 2})}</p>
-                  </div>
-                </div>
               </div>
             </div>
           );
@@ -93,91 +82,91 @@ export const AuditModule: React.FC<AuditModuleProps> = ({ posConfigs, posSalesDa
 
       {selectedPos && (
         <div className="fixed inset-0 z-[100] flex justify-end">
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onCloseDetail}></div>
-          <div className="relative w-full max-w-xl bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
-             <div className="p-6 border-b flex justify-between items-center bg-gray-50">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" onClick={onCloseDetail}></div>
+          <div className="relative w-full max-w-xl bg-[#f8f9fa] h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-200">
+             <div className="px-6 py-4 border-b bg-white flex justify-between items-center">
                 <div className="flex items-center gap-3">
-                   <div className="w-10 h-10 bg-odoo-primary rounded flex items-center justify-center text-white">
+                   <div className="p-2 bg-odoo-primary/10 rounded text-odoo-primary">
                       <Store size={20}/>
                    </div>
-                   <div>
-                      <h3 className="text-sm font-black text-gray-800 uppercase tracking-tight">{selectedPos.name}</h3>
-                      <p className="text-[9px] font-black text-odoo-primary uppercase mt-1">Detalle de Operaciones</p>
-                   </div>
+                   <h3 className="text-lg font-bold text-gray-700 uppercase">{selectedPos.name}</h3>
                 </div>
                 <button 
                   onClick={(e) => { e.stopPropagation(); onCloseDetail(); }} 
-                  className="p-3 hover:bg-red-50 text-gray-400 hover:text-red-500 rounded-full transition-all border border-transparent"
+                  className="p-2 hover:bg-gray-100 rounded-full transition-colors"
                 >
-                  <X size={24}/>
+                  <X size={20}/>
                 </button>
              </div>
              
-             <div className="flex-1 overflow-y-auto p-8 space-y-10 custom-scrollbar">
-                <div className="grid grid-cols-3 gap-3">
-                   <div className="p-4 bg-white border rounded shadow-sm text-center">
-                      <p className="text-[9px] font-black text-gray-400 uppercase mb-1 tracking-widest">Ingreso</p>
-                      <p className="text-sm font-black text-gray-800">S/ {(currentData?.totalSales || 0).toLocaleString('es-PE', {minimumFractionDigits: 2})}</p>
+             <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar">
+                <div className="grid grid-cols-3 gap-4">
+                   <div className="p-4 bg-white border border-odoo-border rounded shadow-sm">
+                      <p className="text-[10px] font-black text-gray-400 uppercase mb-2">Ingreso</p>
+                      <p className="text-lg font-bold text-gray-800">S/ {(currentData?.totalSales || 0).toLocaleString('es-PE', {minimumFractionDigits: 2})}</p>
                    </div>
-                   <div className="p-4 bg-white border rounded shadow-sm text-center">
-                      <p className="text-[9px] font-black text-gray-400 uppercase mb-1 tracking-widest">Costo</p>
-                      <p className="text-sm font-black text-red-600">S/ {(currentData?.totalCost || 0).toLocaleString('es-PE', {minimumFractionDigits: 2})}</p>
+                   <div className="p-4 bg-white border border-odoo-border rounded shadow-sm">
+                      <p className="text-[10px] font-black text-gray-400 uppercase mb-2">Costo</p>
+                      <p className="text-lg font-bold text-red-600">S/ {(currentData?.totalCost || 0).toLocaleString('es-PE', {minimumFractionDigits: 2})}</p>
                    </div>
-                   <div className="p-4 bg-green-50 border border-green-100 rounded text-center">
-                      <p className="text-[9px] font-black text-green-600 uppercase mb-1 tracking-widest">Utilidad</p>
-                      <p className="text-sm font-black text-green-700">S/ {(currentData?.margin || 0).toLocaleString('es-PE', {minimumFractionDigits: 2})}</p>
+                   <div className="p-4 bg-white border border-odoo-primary/20 rounded shadow-sm ring-1 ring-odoo-primary/10">
+                      <p className="text-[10px] font-black text-odoo-primary uppercase mb-2">Utilidad</p>
+                      <p className="text-lg font-bold text-odoo-primary">S/ {(currentData?.margin || 0).toLocaleString('es-PE', {minimumFractionDigits: 2})}</p>
                    </div>
                 </div>
 
-                <section className="space-y-4">
-                   <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest border-b pb-2 flex items-center gap-2">
-                     <ListChecks size={16} className="text-odoo-primary"/> Medios de Pago
-                   </h4>
-                   <div className="space-y-2">
+                <div className="bg-white border border-odoo-border rounded overflow-hidden">
+                   <div className="px-5 py-3 border-b bg-gray-50/50">
+                      <h4 className="text-xs font-bold text-gray-600 uppercase flex items-center gap-2">
+                        <ListChecks size={16} /> Desglose de Pagos
+                      </h4>
+                   </div>
+                   <div className="divide-y divide-gray-100">
                       {Object.entries(currentData?.payments || {}).map(([method, amount]: [any, any]) => (
-                        <div key={method} className="flex justify-between items-center p-4 bg-gray-50 border border-gray-100 rounded">
-                           <span className="text-[10px] font-black text-gray-600 uppercase tracking-tight">{method}</span>
-                           <span className="text-sm font-black text-gray-800">S/ {amount.toLocaleString('es-PE', {minimumFractionDigits: 2})}</span>
+                        <div key={method} className="px-5 py-3 flex justify-between items-center hover:bg-gray-50 transition-colors">
+                           <span className="text-xs font-semibold text-gray-500 uppercase">{method}</span>
+                           <span className="text-sm font-bold text-gray-800">S/ {amount.toLocaleString('es-PE', {minimumFractionDigits: 2})}</span>
                         </div>
                       ))}
                       {Object.keys(currentData?.payments || {}).length === 0 && (
-                        <p className="text-[10px] text-center text-gray-400 py-4 uppercase border border-dashed rounded">Sin pagos registrados hoy en este rango</p>
+                        <div className="p-8 text-center text-gray-400 italic text-xs">Sin pagos registrados en este periodo</div>
                       )}
                    </div>
-                </section>
+                </div>
 
-                <section className="space-y-4">
-                   <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest border-b pb-2 flex items-center gap-2">
-                     <Package size={16} className="text-odoo-primary"/> Margen por Producto
-                   </h4>
-                   <div className="bg-white border rounded shadow-sm overflow-hidden">
-                      <div className="divide-y divide-gray-100">
+                <div className="bg-white border border-odoo-border rounded overflow-hidden">
+                   <div className="px-5 py-3 border-b bg-gray-50/50 flex justify-between items-center">
+                      <h4 className="text-xs font-bold text-gray-600 uppercase flex items-center gap-2">
+                        <Package size={16} /> Productos Vendidos
+                      </h4>
+                      <span className="text-[10px] font-bold text-gray-400">Top 50 items</span>
+                   </div>
+                   <div className="divide-y divide-gray-100 max-h-[400px] overflow-y-auto custom-scrollbar">
                         {(currentData?.products || []).length === 0 ? (
-                           <p className="p-10 text-center text-[10px] font-black text-gray-400 uppercase">Sin productos vendidos o cargando...</p>
+                           <div className="p-8 text-center text-gray-400 italic text-xs">No hay productos vendidos en este rango</div>
                         ) : (currentData?.products || []).slice(0, 50).map((p: any, idx: number) => (
-                          <div key={idx} className="p-4 flex justify-between items-center hover:bg-gray-50 transition-all">
+                          <div key={idx} className="px-5 py-3 flex justify-between items-center hover:bg-gray-50 transition-colors">
                              <div className="max-w-[70%]">
-                                <p className="text-[10px] font-black text-gray-700 uppercase truncate tracking-tight">{p.name}</p>
-                                <p className="text-[8px] font-bold text-gray-400 uppercase mt-0.5">{p.qty} Unid | Costo Promedio: S/ {(p.cost / (p.qty || 1)).toFixed(2)}</p>
+                                <p className="text-xs font-bold text-gray-700 uppercase truncate">{p.name}</p>
+                                <p className="text-[10px] font-medium text-gray-400 mt-0.5">{p.qty} Unid · Margen: {((p.margin/p.total)*100).toFixed(1)}%</p>
                              </div>
                              <div className="text-right">
-                                <span className={`text-[11px] font-black ${p.margin > 0 ? 'text-green-600' : 'text-red-500'}`}>
+                                <span className={`text-sm font-bold ${p.margin > 0 ? 'text-green-600' : 'text-red-500'}`}>
                                    S/ {(p.margin || 0).toLocaleString('es-PE', {minimumFractionDigits: 2})}
                                 </span>
                              </div>
                           </div>
                         ))}
-                      </div>
                    </div>
-                </section>
+                </div>
              </div>
 
-             <div className="p-6 border-t bg-gray-50">
+             <div className="p-6 bg-white border-t border-odoo-border">
                 <button 
-                  onClick={() => alert("Generando reporte Excel para esta sede...")}
-                  className="w-full bg-odoo-primary hover:bg-[#5a3c52] text-white py-4 rounded font-black text-[10px] uppercase tracking-[0.2em] shadow-lg flex items-center justify-center gap-3 transition-all"
+                  onClick={() => alert("Generando reporte Excel detallado...")}
+                  className="w-full o-btn o-btn-primary py-4 font-bold gap-2"
                 >
-                  <FileSpreadsheet size={18}/> Descargar Reporte de Sede
+                  <FileSpreadsheet size={18}/> Descargar Reporte Detallado
                 </button>
              </div>
           </div>

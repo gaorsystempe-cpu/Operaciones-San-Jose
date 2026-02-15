@@ -39,7 +39,10 @@ const App: React.FC = () => {
   const [posConfigs, setPosConfigs] = useState<any[]>([]);
   const [posSalesData, setPosSalesData] = useState<any>({});
   const [selectedPos, setSelectedPos] = useState<any>(null);
-  const [dateRange, setDateRange] = useState({ start: formatDate(getPeruDate()), end: formatDate(getPeruDate()) });
+  const [dateRange, setDateRange] = useState({ 
+    start: formatDate(getPeruDate()), 
+    end: formatDate(getPeruDate()) 
+  });
   
   const [warehouses, setWarehouses] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
@@ -50,18 +53,6 @@ const App: React.FC = () => {
 
   const client = useMemo(() => new OdooClient(config.url, config.db), [config.url, config.db]);
 
-  const fetchMyOrders = useCallback(async () => {
-    if (!session?.name) return;
-    try {
-      const orders = await client.searchRead('stock.picking', 
-        [['origin', 'ilike', `PEDIDO APP - ${session.name}`]], 
-        ['name', 'state', 'location_dest_id', 'scheduled_date'],
-        { order: 'id desc', limit: 5 }
-      );
-      setMyOrders(orders || []);
-    } catch (e) { console.error(e); }
-  }, [client, session]);
-
   const fetchData = useCallback(async () => {
     if (view !== 'app') return;
     setLoading(true);
@@ -71,7 +62,7 @@ const App: React.FC = () => {
       if (!companies || !companies.length) throw new Error("Compañía San José no encontrada.");
       const sanJoseId = companies[0].id;
 
-      // 1. Cargar Configuraciones de POS
+      // 1. Cargar Configuraciones de POS (Cajas)
       const configs = await client.searchRead('pos.config', 
         [['company_id', '=', sanJoseId]], 
         ['name', 'id', 'current_session_id', 'current_session_state']
@@ -83,61 +74,62 @@ const App: React.FC = () => {
       );
       setPosConfigs(filteredConfigs);
 
-      // 2. Cargar Almacenes
+      // 2. Almacenes para logística
       const ws = await client.searchRead('stock.warehouse', [['company_id', '=', sanJoseId]], ['name', 'id', 'lot_stock_id', 'company_id']);
       setWarehouses((ws || []).filter((w: any) => !blacklist.some(term => w.name.toUpperCase().includes(term))));
 
-      // 3. Cargar Sesiones (Ajuste de rango para cubrir todo el día)
-      const sessionDomain = [
+      // 3. Obtener Sesiones del Rango (Ajustado para UTC)
+      const sessions = await client.searchRead('pos.session', [
         ['config_id', 'in', filteredConfigs.map(c => c.id)],
         ['start_at', '>=', `${dateRange.start} 00:00:00`], 
         ['start_at', '<=', `${dateRange.end} 23:59:59`]
-      ];
-      const sessions = await client.searchRead('pos.session', sessionDomain, 
-        ['id', 'config_id', 'user_id', 'start_at', 'state', 'total_payments_amount'], 
-        { order: 'start_at desc' }
-      ) || [];
+      ], ['id', 'config_id', 'user_id', 'start_at', 'state', 'total_payments_amount'], { order: 'start_at desc' }) || [];
 
       const sessionIds = sessions.map(s => s.id);
 
-      // 4. Pagos y Pedidos
+      // 4. Obtener Órdenes de Venta (Mejor que solo pagos)
+      const orders = sessionIds.length > 0 ? await client.searchRead('pos.order',
+        [['session_id', 'in', sessionIds]],
+        ['id', 'session_id', 'amount_total', 'amount_tax', 'state', 'payment_ids']
+      ) : [];
+
+      // 5. Pagos por método
       const payments = sessionIds.length > 0 ? await client.searchRead('pos.payment', 
         [['session_id', 'in', sessionIds]], 
         ['amount', 'payment_method_id', 'session_id']
       ) : [];
 
-      const orders = sessionIds.length > 0 ? await client.searchRead('pos.order',
-        [['session_id', 'in', sessionIds]],
-        ['id', 'session_id', 'amount_total']
-      ) : [];
-      
+      // 6. Líneas de Pedido para calcular COSTOS reales
       const orderIds = (orders || []).map(o => o.id);
       const orderLines = orderIds.length > 0 ? await client.searchRead('pos.order.line',
         [['order_id', 'in', orderIds]],
         ['product_id', 'qty', 'price_subtotal_incl', 'order_id']
       ) : [];
 
-      // 5. OBTENCIÓN DE COSTOS REALES (Fuerza contexto de compañía)
+      // 7. Sincronización de precios de costo de Odoo
       const productIds = Array.from(new Set((orderLines || []).map(l => Array.isArray(l.product_id) ? l.product_id[0] : null).filter(Boolean)));
-      const productCostsData = productIds.length > 0 ? await client.rpcCall('object', 'execute_kw', [
-        config.db, (client as any).uid, config.apiKey,
-        'product.product', 'read',
-        [productIds, ['standard_price']],
-        { context: { company_id: sanJoseId } }
-      ]) : [];
       
-      const costsMap: Record<number, number> = {};
-      (productCostsData || []).forEach((p: any) => costsMap[p.id] = p.standard_price || 0);
+      let costsMap: Record<number, number> = {};
+      if (productIds.length > 0) {
+        const productCostsData = await client.rpcCall('object', 'execute_kw', [
+          config.db, (client as any).uid, config.apiKey,
+          'product.product', 'read',
+          [productIds, ['standard_price']],
+          { context: { company_id: sanJoseId } }
+        ]);
+        (productCostsData || []).forEach((p: any) => costsMap[p.id] = p.standard_price || 0);
+      }
 
-      // 6. Consolidación de Estadísticas
+      // 8. Consolidación de Data por Caja
       const stats: any = {};
       filteredConfigs.forEach(conf => {
         const confSessions = sessions.filter(s => s.config_id && s.config_id[0] === conf.id);
         const confSessionIds = confSessions.map(s => s.id);
         
-        // Mapeo de estados humano
+        // Estado: Si hay una abierta hoy, es ABIERTO. Si no, tomamos el estado de la última.
         const latestSession = confSessions[0];
         const stateKey = conf.current_session_state || (latestSession ? latestSession.state : 'false');
+        
         const stateMapping: any = {
           'opened': 'ABIERTO',
           'opening_control': 'ABRIENDO',
@@ -146,13 +138,16 @@ const App: React.FC = () => {
           'false': 'SIN ACTIVIDAD'
         };
 
+        const posOrders = (orders || []).filter(o => o.session_id && confSessionIds.includes(o.session_id[0]));
+        const totalSales = posOrders.reduce((acc, curr) => acc + (curr.amount_total || 0), 0);
+        
+        const posPayments = (payments || []).filter(p => p.session_id && confSessionIds.includes(p.session_id[0]));
         const methodStats: any = {};
-        (payments || []).filter(p => p.session_id && confSessionIds.includes(p.session_id[0])).forEach(p => {
-          const mName = Array.isArray(p.payment_method_id) ? p.payment_method_id[1] : 'Efectivo/Otros';
+        posPayments.forEach(p => {
+          const mName = Array.isArray(p.payment_method_id) ? p.payment_method_id[1] : 'Otros';
           methodStats[mName] = (methodStats[mName] || 0) + p.amount;
         });
 
-        const posOrders = (orders || []).filter(o => o.session_id && confSessionIds.includes(o.session_id[0]));
         const posOrderIds = posOrders.map(o => o.id);
         const posLines = (orderLines || []).filter(l => l.order_id && posOrderIds.includes(l.order_id[0]));
         
@@ -173,8 +168,6 @@ const App: React.FC = () => {
           productStats[pName].margin = productStats[pName].total - productStats[pName].cost;
         });
 
-        const totalSales = confSessions.reduce((a, b) => a + (b.total_payments_amount || 0), 0);
-
         stats[conf.id] = {
           isOnline: stateKey === 'opened' || stateKey === 'opening_control',
           rawState: stateMapping[stateKey] || stateKey.toUpperCase(),
@@ -192,58 +185,13 @@ const App: React.FC = () => {
 
       setPosSalesData(stats);
       setLastSync(new Date().toLocaleTimeString('es-PE'));
-      fetchMyOrders();
     } catch (e: any) { 
-      console.error("Data Sync Failure:", e);
-      setErrorLog(e.message || "Error al conectar con Odoo."); 
+      console.error("Fetch Error:", e);
+      setErrorLog(e.message || "Error de conexión con Odoo."); 
     } finally { setLoading(false); }
-  }, [client, view, dateRange, config.companyName, fetchMyOrders]);
+  }, [client, view, dateRange, config.companyName, config.db, config.apiKey]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
-
-  const handleProductSearch = async (term: string) => {
-    if (term.length < 2) return;
-    try {
-      const mainWarehouse = warehouses.find(w => w.name.toUpperCase().includes('PRINCIPAL1'));
-      if (!mainWarehouse) return;
-      const results = await client.rpcCall('object', 'execute_kw', [
-        config.db, (client as any).uid, config.apiKey,
-        'product.product', 'search_read',
-        [['|', ['name', 'ilike', term], ['default_code', 'ilike', term], ['qty_available', '>', 0]]],
-        { fields: ['name', 'default_code', 'list_price', 'qty_available', 'uom_id'], limit: 12, context: { location: mainWarehouse.lot_stock_id[0] } }
-      ]);
-      setProducts(results || []);
-    } catch (e) { console.error(e); }
-  };
-
-  const createWarehouseOrder = async () => {
-    if (!targetWarehouseId || cart.length === 0) return alert("Seleccione botica destino.");
-    setLoading(true);
-    try {
-      const mainWarehouse = warehouses.find(w => w.name.toUpperCase().includes('PRINCIPAL1'));
-      const targetWarehouse = warehouses.find(w => w.id === targetWarehouseId);
-      const pickingTypes = await client.searchRead('stock.picking.type', [['code', '=', 'internal'], ['warehouse_id', '=', mainWarehouse.id]], ['id']);
-      if (!pickingTypes.length) throw new Error("No se encontró tipo de operación interna.");
-      
-      const pickingId = await client.create('stock.picking', {
-        picking_type_id: pickingTypes[0].id,
-        location_id: mainWarehouse.lot_stock_id[0],
-        location_dest_id: targetWarehouse.lot_stock_id[0],
-        origin: `PEDIDO APP - ${session.name}`,
-        company_id: mainWarehouse.company_id[0], 
-        user_id: (client as any).uid
-      });
-      for (const item of cart) {
-        await client.create('stock.move', {
-          name: item.name, product_id: item.id, product_uom_qty: item.qty, product_uom: item.uom_id[0],
-          picking_id: pickingId, company_id: mainWarehouse.company_id[0],
-          location_id: mainWarehouse.lot_stock_id[0], location_dest_id: targetWarehouse.lot_stock_id[0],
-        });
-      }
-      alert("Transferencia borrador creada en Odoo.");
-      setCart([]); fetchMyOrders(); setActiveTab('pedidos');
-    } catch (e: any) { alert("Error: " + e.message); } finally { setLoading(false); }
-  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -251,9 +199,9 @@ const App: React.FC = () => {
     setErrorLog(null);
     try {
       const uid = await client.authenticate(config.user, config.apiKey);
-      if (!uid) throw new Error("Acceso denegado (API Key).");
+      if (!uid) throw new Error("Credenciales inválidas.");
       const user = await client.searchRead('res.users', [['login', '=', loginInput]], ['name'], { limit: 1 });
-      if (!user || !user.length) throw new Error("Usuario no encontrado en la base de datos.");
+      if (!user || !user.length) throw new Error("Usuario no encontrado.");
       setSession({ name: user[0].name });
       setView('app');
     } catch (e: any) { setErrorLog(e.message); } finally { setLoading(false); }
@@ -264,12 +212,12 @@ const App: React.FC = () => {
       <div className="bg-white w-full max-w-[440px] shadow-2xl rounded-sm border-t-4 border-odoo-primary overflow-hidden">
         <div className="p-10 space-y-8 text-center">
           <div className="w-24 h-24 bg-odoo-primary rounded-lg flex items-center justify-center text-white text-5xl font-bold italic mx-auto shadow-inner">SJ</div>
-          <div><h1 className="text-xl font-black text-gray-800 uppercase">San José BI</h1><p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">Inteligencia de Negocios</p></div>
-          <form onSubmit={handleLogin} className="space-y-6 text-left">
-            <div className="space-y-1"><label className="text-xs font-black text-gray-500 uppercase">Usuario Odoo</label><input type="text" className="w-full p-4 bg-gray-50 border border-gray-300 rounded-sm outline-none font-bold focus:border-odoo-primary" placeholder="Ej. soporte" value={loginInput} onChange={e => setLoginInput(e.target.value)} required /></div>
-            <button className="w-full bg-odoo-primary text-white py-4 rounded-sm font-black uppercase tracking-widest shadow-md hover:bg-[#5a3c52] transition-colors">{loading ? <Loader2 className="animate-spin mx-auto" size={18}/> : 'Iniciar Sesión'}</button>
+          <h1 className="text-xl font-black text-gray-800 uppercase">San José Hub</h1>
+          <form onSubmit={handleLogin} className="space-y-6">
+            <input type="text" className="w-full p-4 bg-gray-50 border rounded-sm font-bold focus:border-odoo-primary outline-none" placeholder="Usuario Odoo" value={loginInput} onChange={e => setLoginInput(e.target.value)} required />
+            <button className="w-full bg-odoo-primary text-white py-4 rounded-sm font-black uppercase tracking-widest hover:bg-[#5a3c52] transition-colors">{loading ? <Loader2 className="animate-spin mx-auto"/> : 'Entrar'}</button>
           </form>
-          {errorLog && <div className="text-red-600 text-[10px] font-black uppercase flex items-center gap-2 justify-center bg-red-50 p-4 rounded border border-red-100"><AlertTriangle size={14}/> {errorLog}</div>}
+          {errorLog && <div className="text-red-600 text-[10px] font-black uppercase bg-red-50 p-4 rounded border border-red-100">{errorLog}</div>}
         </div>
       </div>
     </div>
@@ -280,40 +228,40 @@ const App: React.FC = () => {
       <header className="h-14 bg-odoo-primary text-white flex items-center justify-between px-6 shrink-0 shadow-lg z-50">
         <div className="flex items-center gap-8 h-full">
           <div className="flex items-center gap-3 font-black h-full cursor-pointer"><div className="w-8 h-8 bg-white rounded-sm flex items-center justify-center text-odoo-primary text-sm font-black italic shadow-sm">SJ</div><span className="text-sm tracking-tight uppercase">BI San José</span></div>
-          {[{ id: 'dashboard', label: 'Dashboard' }, { id: 'ventas', label: 'Auditoría' }, { id: 'pedidos', label: 'Logística' }].map(tab => (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`px-5 h-full flex items-center text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === tab.id ? 'bg-white/10 border-b-4 border-white' : 'opacity-60 hover:opacity-100 hover:bg-white/5'}`}>{tab.label}</button>
+          {['dashboard', 'ventas', 'pedidos'].map(id => (
+            <button key={id} onClick={() => setActiveTab(id)} className={`px-5 h-full flex items-center text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === id ? 'bg-white/10 border-b-4 border-white' : 'opacity-60 hover:opacity-100'}`}>{id}</button>
           ))}
         </div>
         <div className="flex items-center gap-4 h-full">
-          <div className="flex items-center gap-2 px-4 h-full border-l border-white/10 text-[10px] font-black uppercase tracking-wider">{session?.name}</div>
-          <button onClick={() => setView('login')} className="px-5 h-full border-l border-white/10 hover:bg-red-500/30 transition-colors"><LogOut size={16}/></button>
+          <span className="text-[10px] font-black uppercase">{session?.name}</span>
+          <button onClick={() => setView('login')} className="px-5 h-full hover:bg-red-500/30 transition-colors"><LogOut size={16}/></button>
         </div>
       </header>
       <div className="flex-1 flex overflow-hidden">
         <aside className="w-72 bg-white border-r border-gray-200 hidden md:flex flex-col shrink-0 shadow-sm">
           <div className="p-6 border-b bg-gray-50/50 space-y-6">
-            <div>
-              <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2 mb-4"><Calendar size={14}/> Periodo Consulta</h3>
-              <div className="space-y-3">
-                <input type="date" value={dateRange.start} onChange={e => setDateRange({...dateRange, start: e.target.value})} className="w-full p-2.5 text-xs border rounded-sm font-bold outline-none focus:border-odoo-primary"/>
-                <input type="date" value={dateRange.end} onChange={e => setDateRange({...dateRange, end: e.target.value})} className="w-full p-2.5 text-xs border rounded-sm font-bold outline-none focus:border-odoo-primary"/>
-                <button onClick={fetchData} className="w-full p-3 bg-odoo-primary text-white rounded-sm text-[10px] font-black uppercase tracking-widest shadow-md hover:bg-[#5a3c52] transition-all flex items-center justify-center gap-2"><RefreshCw size={14} className={loading ? 'animate-spin' : ''}/> Sincronizar Odoo</button>
-              </div>
+            <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Filtros de Auditoría</h3>
+            <div className="space-y-3">
+              <input type="date" value={dateRange.start} onChange={e => setDateRange({...dateRange, start: e.target.value})} className="w-full p-2.5 text-xs border rounded-sm font-bold outline-none focus:border-odoo-primary"/>
+              <input type="date" value={dateRange.end} onChange={e => setDateRange({...dateRange, end: e.target.value})} className="w-full p-2.5 text-xs border rounded-sm font-bold outline-none focus:border-odoo-primary"/>
+              <button onClick={fetchData} className="w-full p-3 bg-odoo-primary text-white rounded-sm text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-[#5a3c52] transition-all">
+                <RefreshCw size={14} className={loading ? 'animate-spin' : ''}/> Actualizar
+              </button>
             </div>
           </div>
         </aside>
-        <main className="flex-1 overflow-y-auto p-10 custom-scrollbar">
-          {errorLog && (
-            <div className="mb-6 p-4 bg-red-100 border-l-4 border-red-600 text-red-700 text-xs font-bold flex items-center gap-3">
-              <AlertTriangle size={18}/> {errorLog}
-            </div>
-          )}
+        <main className="flex-1 overflow-y-auto p-10 custom-scrollbar relative">
           {activeTab === 'dashboard' && <Dashboard posConfigs={posConfigs} posSalesData={posSalesData} lastSync={lastSync} />}
-          {activeTab === 'ventas' && <AuditModule posConfigs={posConfigs} posSalesData={posSalesData} onSelect={setSelectedPos} selectedPos={setSelectedPos} onCloseDetail={() => setSelectedPos(null)} />}
-          {activeTab === 'pedidos' && (<OrderModule productSearch={productSearch} setProductSearch={setProductSearch} onSearch={handleProductSearch} products={products} cart={cart} setCart={setCart} warehouses={warehouses} targetWarehouseId={targetWarehouseId} setTargetWarehouseId={setTargetWarehouseId} onSubmitOrder={createWarehouseOrder} loading={loading} />)}
+          {activeTab === 'ventas' && <AuditModule posConfigs={posConfigs} posSalesData={posSalesData} onSelect={setSelectedPos} selectedPos={selectedPos} onCloseDetail={() => setSelectedPos(null)} />}
+          {activeTab === 'pedidos' && <OrderModule productSearch={productSearch} setProductSearch={setProductSearch} onSearch={() => {}} products={products} cart={cart} setCart={setCart} warehouses={warehouses} targetWarehouseId={targetWarehouseId} setTargetWarehouseId={setTargetWarehouseId} onSubmitOrder={() => {}} loading={loading} />}
         </main>
       </div>
-      {loading && (<div className="fixed bottom-8 right-8 z-[200] bg-white px-8 py-5 rounded shadow-2xl border-l-4 border-odoo-primary flex items-center gap-5 animate-in slide-in-from-right"><Loader2 className="animate-spin text-odoo-primary" size={24}/><div className="space-y-1"><p className="text-[11px] font-black uppercase text-gray-800 tracking-widest">Calculando Auditoría...</p></div></div>)}
+      {loading && (
+        <div className="fixed bottom-8 right-8 z-[200] bg-white px-8 py-5 rounded shadow-2xl border-l-4 border-odoo-primary flex items-center gap-5">
+          <Loader2 className="animate-spin text-odoo-primary" size={24}/>
+          <p className="text-[11px] font-black uppercase text-gray-800">Sincronizando con Odoo v18...</p>
+        </div>
+      )}
     </div>
   );
 };

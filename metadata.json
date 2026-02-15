@@ -1,5 +1,5 @@
 {
-  "name": "Odoo v18 Operations Hub",
-  "description": "Plataforma integral de operaciones: Compras, RRHH (Horarios) y Reportes de Ventas POS con integración nativa Odoo.",
+  "name": "SJS Operations Hub",
+  "description": "Centro de Operaciones Integral: Gestión de Ventas, Inventario y Auditoría para Boticas San José.",
   "requestFramePermissions": []
 }

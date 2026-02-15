@@ -62,12 +62,10 @@ const App: React.FC = () => {
     setLoading(true);
     setErrorLog(null);
     try {
-      // 1. Identificar Compañía
       const companies = await client.searchRead('res.company', [['name', 'ilike', 'SAN JOSE']], ['id']);
       if (!companies || !companies.length) throw new Error("Compañía San José no encontrada.");
       const sanJoseId = companies[0].id;
 
-      // 2. Cargar Cajas (pos.config)
       const configs = await client.searchRead('pos.config', 
         [['company_id', '=', sanJoseId]], 
         ['name', 'id', 'current_session_id', 'current_session_state']
@@ -79,11 +77,9 @@ const App: React.FC = () => {
       );
       setPosConfigs(filteredConfigs);
 
-      // 3. Cargar Almacenes e identificar PRINCIPAL1 y su ubicación de stock (lot_stock_id)
       const ws = await client.searchRead('stock.warehouse', [['company_id', '=', sanJoseId]], ['name', 'id', 'code', 'lot_stock_id']);
       setWarehouses(ws || []);
       
-      // Búsqueda estricta por código PRINCIPAL1 o PR
       const principal = (ws || []).find((w: any) => 
         w.code === 'PRINCIPAL1' || w.code === 'PR' || w.name.toUpperCase().includes('PRINCIPAL')
       );
@@ -95,7 +91,6 @@ const App: React.FC = () => {
         }
       }
 
-      // 4. Obtener Sesiones del Rango
       const sessions = await client.searchRead('pos.session', [
         ['config_id', 'in', filteredConfigs.map(c => c.id)],
         ['start_at', '<=', `${dateRange.end} 23:59:59`],
@@ -106,7 +101,6 @@ const App: React.FC = () => {
         if (s.config_id) sessionToConfigMap[s.id] = s.config_id[0];
       });
 
-      // 5. Cargar Pedidos
       const orders = await client.searchRead('pos.order', [
         ['company_id', '=', sanJoseId],
         ['date_order', '>=', `${dateRange.start} 00:00:00`],
@@ -116,7 +110,6 @@ const App: React.FC = () => {
 
       const orderIds = orders.map(o => o.id);
       
-      // 6. Cargar Líneas y Vincular Costos
       const orderLines = orderIds.length > 0 ? await client.searchRead('pos.order.line',
         [['order_id', 'in', orderIds]],
         ['product_id', 'qty', 'price_subtotal_incl', 'order_id']
@@ -134,13 +127,11 @@ const App: React.FC = () => {
         (productData || []).forEach((p: any) => costsMap[p.id] = p.standard_price || 0);
       }
 
-      // 7. Cargar Pagos
       const payments = orderIds.length > 0 ? await client.searchRead('pos.payment', 
         [['pos_order_id', 'in', orderIds]], 
         ['amount', 'payment_method_id', 'pos_order_id']
       ) : [];
 
-      // 8. Consolidar Estadísticas
       const stats: any = {};
       filteredConfigs.forEach(conf => {
         const posOrders = orders.filter(o => {
@@ -209,16 +200,13 @@ const App: React.FC = () => {
     if (term.length < 3) return;
     setLoading(true);
     try {
-      // Sincronizar stock REAL de la ubicación principal
-      const fields = ['name', 'default_code', 'list_price', 'qty_available'];
+      const fields = ['name', 'default_code', 'list_price', 'qty_available', 'uom_id'];
       const options: any = { limit: 15 };
       
-      // En Odoo v14, para obtener el stock de una ubicación específica (ej. PR/Stock),
-      // se debe pasar 'location' en el contexto.
       if (originLocationId) {
         options.context = { 
           location: originLocationId,
-          compute_child_locations: false // Evita sumar sub-ubicaciones si no se desea
+          compute_child_locations: false
         };
       } else if (originWarehouseId) {
         options.context = { warehouse: originWarehouseId };
@@ -237,18 +225,55 @@ const App: React.FC = () => {
   };
 
   const handleConfirmOrder = async () => {
-    if (!targetWarehouseId || cart.length === 0) {
-      alert("Seleccione una sede de destino y agregue productos.");
+    if (!targetWarehouseId || cart.length === 0 || !originLocationId) {
+      alert("Error: Asegúrese de seleccionar destino y que el Almacén Principal esté cargado.");
       return;
     }
+
     setLoading(true);
     try {
-      await new Promise(r => setTimeout(r, 1500));
-      alert("Solicitud de Suministro Interno registrada correctamente.");
-      setCart([]);
-      setTargetWarehouseId(null);
-    } catch (e) {
-      alert("Error al procesar el pedido.");
+      // 1. Obtener la ubicación de destino del almacén seleccionado
+      const targetWh = warehouses.find(w => w.id === targetWarehouseId);
+      if (!targetWh || !targetWh.lot_stock_id) throw new Error("El almacén de destino no tiene ubicación de stock.");
+      const destLocationId = targetWh.lot_stock_id[0];
+
+      // 2. Buscar el tipo de operación para transferencias internas de la compañía
+      const pickingTypes = await client.searchRead('stock.picking.type', [
+        ['code', '=', 'internal'],
+        ['warehouse_id', '=', originWarehouseId]
+      ], ['id'], { limit: 1 });
+
+      if (!pickingTypes || pickingTypes.length === 0) throw new Error("No se encontró un tipo de operación para transferencias internas.");
+      const pickingTypeId = pickingTypes[0].id;
+
+      // 3. Crear el stock.picking en estado borrador
+      const pickingValues = {
+        picking_type_id: pickingTypeId,
+        location_id: originLocationId,
+        location_dest_id: destLocationId,
+        origin: "Hub SJS Ops - Solicitud de Suministro",
+        move_ids_without_package: cart.map(item => [0, 0, {
+          name: item.name,
+          product_id: item.id,
+          product_uom_qty: item.qty,
+          product_uom: item.uom_id ? item.uom_id[0] : 1, // Default a ID 1 si no hay UoM
+          location_id: originLocationId,
+          location_dest_id: destLocationId,
+        }])
+      };
+
+      const pickingId = await client.create('stock.picking', pickingValues);
+      
+      if (pickingId) {
+        alert(`Transferencia interna creada con éxito en Odoo (ID: ${pickingId}). Estado: Borrador.`);
+        setCart([]);
+        setTargetWarehouseId(null);
+        setProductSearch("");
+        setProducts([]);
+      }
+    } catch (e: any) {
+      alert(`Error al crear pedido en Odoo: ${e.message}`);
+      console.error(e);
     } finally {
       setLoading(false);
     }
@@ -418,7 +443,7 @@ const App: React.FC = () => {
       {loading && (
         <div className="fixed bottom-6 right-6 z-[200] bg-white px-6 py-3 rounded-lg shadow-xl border border-odoo-border flex items-center gap-4 animate-in slide-in-from-bottom">
           <Loader2 className="animate-spin text-odoo-primary" size={20}/>
-          <p className="text-xs font-bold text-gray-700">Cargando datos de Odoo...</p>
+          <p className="text-xs font-bold text-gray-700">Conectando con Odoo...</p>
         </div>
       )}
     </div>

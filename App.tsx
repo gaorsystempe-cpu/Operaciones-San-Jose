@@ -112,12 +112,6 @@ const App: React.FC = () => {
         ['amount', 'payment_method_id', 'session_id']
       ) : [];
 
-      // 5. Obtener Pedidos para desglose de productos
-      const orders = sessionIds.length > 0 ? await client.searchRead('pos.order',
-        [['session_id', 'in', sessionIds]],
-        ['id', 'amount_total', 'session_id', 'lines']
-      ) : [];
-
       const stats: any = {};
       filteredConfigs.forEach(conf => {
         const confSessions = sessions.filter(s => s.config_id[0] === conf.id);
@@ -173,6 +167,8 @@ const App: React.FC = () => {
       const mainWarehouse = warehouses.find(w => w.name.toUpperCase().includes('PRINCIPAL1'));
       const targetWarehouse = warehouses.find(w => w.id === targetWarehouseId);
       const pickingTypes = await client.searchRead('stock.picking.type', [['code', '=', 'internal'], ['warehouse_id', '=', mainWarehouse.id]], ['id']);
+      
+      // Creamos el registro de picking (Transferencia)
       const pickingId = await client.create('stock.picking', {
         picking_type_id: pickingTypes[0].id,
         location_id: mainWarehouse.lot_stock_id[0],
@@ -181,17 +177,33 @@ const App: React.FC = () => {
         company_id: mainWarehouse.company_id[0], 
         user_id: (client as any).uid
       });
+
+      // Creamos los movimientos de stock asociados
       for (const item of cart) {
         await client.create('stock.move', {
-          name: item.name, product_id: item.id, product_uom_qty: item.qty, product_uom: item.uom_id[0],
-          picking_id: pickingId, company_id: mainWarehouse.company_id[0],
-          location_id: mainWarehouse.lot_stock_id[0], location_dest_id: targetWarehouse.lot_stock_id[0],
+          name: item.name, 
+          product_id: item.id, 
+          product_uom_qty: item.qty, 
+          product_uom: item.uom_id[0],
+          picking_id: pickingId, 
+          company_id: mainWarehouse.company_id[0],
+          location_id: mainWarehouse.lot_stock_id[0], 
+          location_dest_id: targetWarehouse.lot_stock_id[0],
         });
       }
-      await client.rpcCall('object', 'execute_kw', [config.db, (client as any).uid, config.apiKey, 'stock.picking', 'action_confirm', [[pickingId]]]);
-      alert("Transferencia exitosa.");
-      setCart([]); fetchMyOrders(); setActiveTab('pedidos');
-    } catch (e: any) { alert("Error: " + e.message); } finally { setLoading(false); }
+
+      // NOTA: Se ha eliminado la llamada a 'action_confirm' 
+      // para que el pedido llegue a Odoo como BORRADOR (Draft).
+
+      alert("Pedido registrado exitosamente en Odoo (Estado: Borrador).");
+      setCart([]); 
+      fetchMyOrders(); 
+      setActiveTab('pedidos');
+    } catch (e: any) { 
+      alert("Error al crear pedido: " + e.message); 
+    } finally { 
+      setLoading(false); 
+    }
   };
 
   const handleLogin = async (e: React.FormEvent) => {

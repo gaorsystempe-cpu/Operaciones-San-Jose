@@ -73,32 +73,30 @@ const App: React.FC = () => {
 
       const blacklist = ['CRUZ', 'CHALPON', 'INDACOCHEA', 'AMAY', 'P&P', 'P & P'];
 
-      // 1. Obtener Cajas (POS Configs) - Verificamos estado real de sesión
+      // 1. Cajas de San José
       const configs = await client.searchRead('pos.config', 
         [['company_id', '=', sanJoseId]], 
-        ['name', 'id', 'current_session_id', 'current_session_state', 'company_id']
+        ['name', 'id', 'current_session_id', 'current_session_state']
       );
       const filteredConfigs = configs.filter((c: any) => 
         !blacklist.some(term => c.name.toUpperCase().includes(term))
       );
       setPosConfigs(filteredConfigs);
 
-      // 2. Obtener Almacenes
+      // 2. Almacenes
       const ws = await client.searchRead('stock.warehouse', 
         [['company_id', '=', sanJoseId]], 
         ['name', 'id', 'lot_stock_id', 'company_id']
       );
       setWarehouses(ws.filter((w: any) => !blacklist.some(term => w.name.toUpperCase().includes(term))));
 
-      // 3. Obtener Sesiones (Incluimos las abiertas sin importar fecha para coincidir con Odoo)
+      // 3. Sesiones ESTRICTAS por fecha (Evitamos sesiones antiguas/fantasmas)
       const sessionDomain = [
         ['config_id', 'in', filteredConfigs.map(c => c.id)],
-        '|',
-        ['state', '=', 'opened'],
-        '&',
         ['start_at', '>=', `${dateRange.start} 00:00:00`], 
         ['start_at', '<=', `${dateRange.end} 23:59:59`]
       ];
+      
       const sessions = await client.searchRead('pos.session', sessionDomain, 
         ['id', 'config_id', 'user_id', 'start_at', 'state', 'cash_register_balance_end_real', 'total_payments_amount'], 
         { order: 'start_at desc' }
@@ -106,10 +104,22 @@ const App: React.FC = () => {
 
       const sessionIds = sessions.map(s => s.id);
 
-      // 4. Obtener Pagos para desglose de métodos
+      // 4. Obtener Pagos Detallados
       const payments = sessionIds.length > 0 ? await client.searchRead('pos.payment', 
         [['session_id', 'in', sessionIds]], 
         ['amount', 'payment_method_id', 'session_id']
+      ) : [];
+
+      // 5. Obtener Líneas de Pedido (Productos Vendidos)
+      const orders = sessionIds.length > 0 ? await client.searchRead('pos.order',
+        [['session_id', 'in', sessionIds]],
+        ['id', 'session_id']
+      ) : [];
+      
+      const orderIds = orders.map(o => o.id);
+      const orderLines = orderIds.length > 0 ? await client.searchRead('pos.order.line',
+        [['order_id', 'in', orderIds]],
+        ['product_id', 'qty', 'price_subtotal_incl', 'order_id']
       ) : [];
 
       const stats: any = {};
@@ -124,13 +134,26 @@ const App: React.FC = () => {
           methodStats[mName] = (methodStats[mName] || 0) + p.amount;
         });
 
+        // Productos por POS
+        const posOrderIds = orders.filter(o => confSessionIds.includes(o.session_id[0])).map(o => o.id);
+        const productStats: any = {};
+        orderLines.filter(l => posOrderIds.includes(l.order_id[0])).forEach(l => {
+          const pName = l.product_id[1];
+          if (!productStats[pName]) productStats[pName] = { qty: 0, total: 0 };
+          productStats[pName].qty += l.qty;
+          productStats[pName].total += l.price_subtotal_incl;
+        });
+
         stats[conf.id] = {
           isOnline: conf.current_session_state === 'opened',
           balance: confSessions.reduce((a, b) => a + (b.cash_register_balance_end_real || 0), 0),
           totalSales: confSessions.reduce((a, b) => a + (b.total_payments_amount || 0), 0),
           count: confSessions.length,
           sessions: confSessions,
-          payments: methodStats
+          payments: methodStats,
+          products: Object.entries(productStats)
+            .map(([name, data]: [string, any]) => ({ name, ...data }))
+            .sort((a, b) => b.total - a.total)
         };
       });
 
@@ -138,9 +161,8 @@ const App: React.FC = () => {
       setLastSync(new Date().toLocaleTimeString('es-PE'));
       fetchMyOrders();
     } catch (e: any) { 
-      setErrorLog(e.message || "Fallo en sincronización Odoo."); 
-    }
-    finally { setLoading(false); }
+      setErrorLog(e.message || "Fallo en sincronización."); 
+    } finally { setLoading(false); }
   }, [client, view, dateRange, config.companyName, fetchMyOrders]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -167,8 +189,6 @@ const App: React.FC = () => {
       const mainWarehouse = warehouses.find(w => w.name.toUpperCase().includes('PRINCIPAL1'));
       const targetWarehouse = warehouses.find(w => w.id === targetWarehouseId);
       const pickingTypes = await client.searchRead('stock.picking.type', [['code', '=', 'internal'], ['warehouse_id', '=', mainWarehouse.id]], ['id']);
-      
-      // Creamos el registro de picking (Transferencia)
       const pickingId = await client.create('stock.picking', {
         picking_type_id: pickingTypes[0].id,
         location_id: mainWarehouse.lot_stock_id[0],
@@ -177,33 +197,16 @@ const App: React.FC = () => {
         company_id: mainWarehouse.company_id[0], 
         user_id: (client as any).uid
       });
-
-      // Creamos los movimientos de stock asociados
       for (const item of cart) {
         await client.create('stock.move', {
-          name: item.name, 
-          product_id: item.id, 
-          product_uom_qty: item.qty, 
-          product_uom: item.uom_id[0],
-          picking_id: pickingId, 
-          company_id: mainWarehouse.company_id[0],
-          location_id: mainWarehouse.lot_stock_id[0], 
-          location_dest_id: targetWarehouse.lot_stock_id[0],
+          name: item.name, product_id: item.id, product_uom_qty: item.qty, product_uom: item.uom_id[0],
+          picking_id: pickingId, company_id: mainWarehouse.company_id[0],
+          location_id: mainWarehouse.lot_stock_id[0], location_dest_id: targetWarehouse.lot_stock_id[0],
         });
       }
-
-      // NOTA: Se ha eliminado la llamada a 'action_confirm' 
-      // para que el pedido llegue a Odoo como BORRADOR (Draft).
-
-      alert("Pedido registrado exitosamente en Odoo (Estado: Borrador).");
-      setCart([]); 
-      fetchMyOrders(); 
-      setActiveTab('pedidos');
-    } catch (e: any) { 
-      alert("Error al crear pedido: " + e.message); 
-    } finally { 
-      setLoading(false); 
-    }
+      alert("Pedido registrado exitosamente.");
+      setCart([]); fetchMyOrders(); setActiveTab('pedidos');
+    } catch (e: any) { alert("Error: " + e.message); } finally { setLoading(false); }
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -216,18 +219,18 @@ const App: React.FC = () => {
       if (!user.length) throw new Error();
       setSession({ name: user[0].name });
       setView('app');
-    } catch { setErrorLog("Usuario no encontrado."); } finally { setLoading(false); }
+    } catch { setErrorLog("Acceso denegado."); } finally { setLoading(false); }
   };
 
   if (view === 'login') return (
-    <div className="h-screen bg-[#F0F2F5] flex items-center justify-center p-6">
+    <div className="h-screen bg-[#F0F2F5] flex items-center justify-center p-6 text-odoo-text">
       <div className="bg-white w-full max-w-[440px] shadow-2xl rounded-sm border-t-4 border-odoo-primary overflow-hidden">
         <div className="p-10 space-y-8 text-center">
           <div className="w-24 h-24 bg-odoo-primary rounded-lg flex items-center justify-center text-white text-5xl font-bold italic mx-auto shadow-inner">SJ</div>
           <div><h1 className="text-xl font-bold text-gray-800">Boticas San José</h1><p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">Gestión de Operaciones</p></div>
           <form onSubmit={handleLogin} className="space-y-6 text-left">
             <div className="space-y-1"><label className="text-xs font-bold text-gray-600 uppercase">ID de Usuario</label><input type="text" className="w-full p-3 bg-gray-50 border border-gray-300 rounded outline-none font-semibold focus:border-odoo-primary" placeholder="Ej. jose.herrera" value={loginInput} onChange={e => setLoginInput(e.target.value)} required /></div>
-            <button className="w-full bg-odoo-primary text-white py-3.5 rounded font-bold uppercase tracking-wider shadow-md hover:bg-[#5a3c52]">{loading ? <Loader2 className="animate-spin mx-auto" size={18}/> : 'Entrar al Sistema'}</button>
+            <button className="w-full bg-odoo-primary text-white py-3.5 rounded font-bold uppercase tracking-wider shadow-md hover:bg-[#5a3c52] transition-colors">{loading ? <Loader2 className="animate-spin mx-auto" size={18}/> : 'Entrar al Sistema'}</button>
           </form>
           {errorLog && <div className="text-red-600 text-[10px] font-black uppercase flex items-center gap-2 justify-center"><AlertTriangle size={14}/> {errorLog}</div>}
         </div>
@@ -237,7 +240,7 @@ const App: React.FC = () => {
   );
 
   return (
-    <div className="h-screen flex flex-col bg-[#F0F2F5]">
+    <div className="h-screen flex flex-col bg-[#F0F2F5] text-odoo-text">
       <header className="h-12 bg-odoo-primary text-white flex items-center justify-between px-4 shrink-0 shadow-md z-50">
         <div className="flex items-center gap-6 h-full font-medium">
           <div className="flex items-center gap-2 font-bold px-3 h-full hover:bg-white/10 transition-colors cursor-pointer"><div className="w-6 h-6 bg-white rounded-sm flex items-center justify-center text-odoo-primary text-[10px] font-black italic">SJ</div><span className="text-sm">Operaciones</span></div>
@@ -245,12 +248,12 @@ const App: React.FC = () => {
             <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`px-4 h-full flex items-center transition-colors ${activeTab === tab.id ? 'bg-white/20 font-bold' : 'hover:bg-white/10'}`}>{tab.label}</button>
           ))}
         </div>
-        <div className="flex items-center gap-4 h-full"><div className="flex items-center gap-2 px-3 h-full border-l border-white/10 text-xs font-bold"><UserIcon size={14}/> {session?.name}</div><button onClick={() => setView('login')} className="px-4 h-full border-l border-white/10 hover:bg-red-500/20"><LogOut size={14}/></button></div>
+        <div className="flex items-center gap-4 h-full"><div className="flex items-center gap-2 px-3 h-full border-l border-white/10 text-xs font-bold"><UserIcon size={14}/> {session?.name}</div><button onClick={() => setView('login')} className="px-4 h-full border-l border-white/10 hover:bg-red-500/20 transition-colors"><LogOut size={14}/></button></div>
       </header>
       <div className="flex-1 flex overflow-hidden">
-        <aside className="w-64 bg-white border-r border-gray-200 hidden md:flex flex-col shrink-0">
+        <aside className="w-64 bg-white border-r border-gray-200 hidden md:flex flex-col shrink-0 shadow-sm">
           <div className="p-4 border-b bg-gray-50/50"><h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2"><Calendar size={14} className="text-odoo-primary"/> Filtro Global</h3>
-            <div className="mt-4 space-y-3"><input type="date" value={dateRange.start} onChange={e => setDateRange({...dateRange, start: e.target.value})} className="w-full p-2 text-xs border rounded font-medium outline-none focus:border-odoo-primary"/><button onClick={fetchData} className="w-full p-2 bg-odoo-primary text-white rounded text-[10px] font-black uppercase tracking-widest shadow-sm">Actualizar Sincronización</button></div>
+            <div className="mt-4 space-y-3"><input type="date" value={dateRange.start} onChange={e => setDateRange({...dateRange, start: e.target.value, end: e.target.value})} className="w-full p-2 text-xs border rounded font-medium outline-none focus:border-odoo-primary"/><button onClick={fetchData} className="w-full p-2 bg-odoo-primary text-white rounded text-[10px] font-black uppercase tracking-widest shadow-sm hover:bg-[#5a3c52] transition-all">Actualizar Sync</button></div>
           </div>
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
              {activeTab === 'pedidos' && myOrders.length > 0 && (
@@ -266,7 +269,7 @@ const App: React.FC = () => {
           {activeTab === 'pedidos' && (<OrderModule productSearch={productSearch} setProductSearch={setProductSearch} onSearch={handleProductSearch} products={products} cart={cart} setCart={setCart} warehouses={warehouses} targetWarehouseId={targetWarehouseId} setTargetWarehouseId={setTargetWarehouseId} onSubmitOrder={createWarehouseOrder} loading={loading} />)}
         </main>
       </div>
-      {loading && (<div className="fixed bottom-6 right-6 z-[200] bg-white px-6 py-4 rounded shadow-2xl border flex items-center gap-4 animate-in slide-in-from-right"><Loader2 className="animate-spin text-odoo-primary" size={20}/><span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Sincronizando con Odoo Real-Time...</span></div>)}
+      {loading && (<div className="fixed bottom-6 right-6 z-[200] bg-white px-6 py-4 rounded shadow-2xl border flex items-center gap-4 animate-in slide-in-from-right"><Loader2 className="animate-spin text-odoo-primary" size={20}/><span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Sincronizando Datos Reales...</span></div>)}
     </div>
   );
 };

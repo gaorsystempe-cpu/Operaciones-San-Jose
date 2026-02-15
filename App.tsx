@@ -49,6 +49,7 @@ const App: React.FC = () => {
   
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [originWarehouseId, setOriginWarehouseId] = useState<number | null>(null);
+  const [originLocationId, setOriginLocationId] = useState<number | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [productSearch, setProductSearch] = useState("");
   const [cart, setCart] = useState<any[]>([]);
@@ -78,15 +79,20 @@ const App: React.FC = () => {
       );
       setPosConfigs(filteredConfigs);
 
-      // 3. Cargar Almacenes e identificar PRINCIPAL1
-      const ws = await client.searchRead('stock.warehouse', [['company_id', '=', sanJoseId]], ['name', 'id', 'code']);
+      // 3. Cargar Almacenes e identificar PRINCIPAL1 y su ubicación de stock (lot_stock_id)
+      const ws = await client.searchRead('stock.warehouse', [['company_id', '=', sanJoseId]], ['name', 'id', 'code', 'lot_stock_id']);
       setWarehouses(ws || []);
       
+      // Búsqueda estricta por código PRINCIPAL1 o PR
       const principal = (ws || []).find((w: any) => 
-        w.code === 'PRINCIPAL1' || w.name.toUpperCase().includes('PRINCIPAL')
+        w.code === 'PRINCIPAL1' || w.code === 'PR' || w.name.toUpperCase().includes('PRINCIPAL')
       );
+      
       if (principal) {
         setOriginWarehouseId(principal.id);
+        if (principal.lot_stock_id) {
+          setOriginLocationId(principal.lot_stock_id[0]);
+        }
       }
 
       // 4. Obtener Sesiones del Rango
@@ -203,11 +209,18 @@ const App: React.FC = () => {
     if (term.length < 3) return;
     setLoading(true);
     try {
-      // Sincronizar solo el stock del Almacén Principal (PRINCIPAL1) usando context
+      // Sincronizar stock REAL de la ubicación principal
       const fields = ['name', 'default_code', 'list_price', 'qty_available'];
       const options: any = { limit: 15 };
       
-      if (originWarehouseId) {
+      // En Odoo v14, para obtener el stock de una ubicación específica (ej. PR/Stock),
+      // se debe pasar 'location' en el contexto.
+      if (originLocationId) {
+        options.context = { 
+          location: originLocationId,
+          compute_child_locations: false // Evita sumar sub-ubicaciones si no se desea
+        };
+      } else if (originWarehouseId) {
         options.context = { warehouse: originWarehouseId };
       }
 

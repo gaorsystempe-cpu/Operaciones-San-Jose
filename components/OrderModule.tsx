@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Truck, Search, Plus, Trash2, ShoppingCart, Package, CheckCircle2, Loader2, AlertCircle, List } from 'lucide-react';
+import { Truck, Search, Plus, Trash2, ShoppingCart, Package, CheckCircle2, Loader2, AlertCircle, List, Info } from 'lucide-react';
 
 interface OrderModuleProps {
   productSearch: string;
@@ -27,18 +27,25 @@ export const OrderModule: React.FC<OrderModuleProps> = ({
           <div className="bg-white border border-odoo-border rounded shadow-sm overflow-hidden">
              <div className="px-6 py-4 border-b bg-gray-50 flex justify-between items-center">
                 <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2 uppercase tracking-tight">
-                  <Truck size={18} className="text-odoo-primary"/> Suministro: Almacén Principal
+                  <Truck size={18} className="text-odoo-primary"/> Suministro: Almacén Principal (PRINCIPAL1)
                 </h3>
                 <div className="flex items-center gap-2">
-                   <span className="text-[10px] font-bold text-white bg-odoo-primary px-2 py-1 rounded">MODO OPERATIVO</span>
+                   <span className="text-[10px] font-bold text-white bg-odoo-primary px-2 py-1 rounded">STOCK ORIGEN</span>
                 </div>
              </div>
              <div className="p-6 space-y-6">
+                <div className="bg-blue-50 border border-blue-100 p-3 rounded flex items-start gap-3">
+                   <Info size={16} className="text-blue-500 mt-0.5 shrink-0" />
+                   <p className="text-[11px] text-blue-700 font-medium">
+                     El stock mostrado a continuación corresponde únicamente a la disponibilidad física en el <b>Almacén Principal (PRINCIPAL1)</b>.
+                   </p>
+                </div>
+
                 <div className="relative group">
                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-odoo-primary transition-colors" size={18}/>
                    <input 
                     type="text" 
-                    placeholder="Buscar por nombre o referencia interna..." 
+                    placeholder="Buscar producto en PRINCIPAL1..." 
                     value={productSearch} 
                     onChange={e => { setProductSearch(e.target.value); onSearch(e.target.value); }} 
                     className="w-full pl-12 pr-4 py-3 o-input" 
@@ -50,7 +57,7 @@ export const OrderModule: React.FC<OrderModuleProps> = ({
                     <thead className="bg-gray-50 text-[11px] font-black text-gray-400 uppercase border-b border-odoo-border">
                        <tr>
                          <th className="px-4 py-2">Producto</th>
-                         <th className="px-4 py-2 text-right">Stock Disp.</th>
+                         <th className="px-4 py-2 text-right">Stock Disp. (P1)</th>
                          <th className="px-4 py-2 text-center w-20">Acción</th>
                        </tr>
                     </thead>
@@ -58,7 +65,7 @@ export const OrderModule: React.FC<OrderModuleProps> = ({
                        {products.length === 0 ? (
                          <tr>
                             <td colSpan={3} className="px-4 py-12 text-center text-gray-400 italic text-xs">
-                               {productSearch.length > 0 ? 'No se encontraron resultados' : 'Inicie una búsqueda de productos'}
+                               {productSearch.length > 0 ? 'No se encontraron resultados en PRINCIPAL1' : 'Inicie una búsqueda de productos'}
                             </td>
                          </tr>
                        ) : products.map(p => (

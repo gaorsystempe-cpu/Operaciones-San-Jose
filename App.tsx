@@ -48,6 +48,7 @@ const App: React.FC = () => {
   });
   
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [originWarehouseId, setOriginWarehouseId] = useState<number | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [productSearch, setProductSearch] = useState("");
   const [cart, setCart] = useState<any[]>([]);
@@ -77,11 +78,18 @@ const App: React.FC = () => {
       );
       setPosConfigs(filteredConfigs);
 
-      // 3. Cargar Almacenes
+      // 3. Cargar Almacenes e identificar PRINCIPAL1
       const ws = await client.searchRead('stock.warehouse', [['company_id', '=', sanJoseId]], ['name', 'id', 'code']);
       setWarehouses(ws || []);
+      
+      const principal = (ws || []).find((w: any) => 
+        w.code === 'PRINCIPAL1' || w.name.toUpperCase().includes('PRINCIPAL')
+      );
+      if (principal) {
+        setOriginWarehouseId(principal.id);
+      }
 
-      // 4. Obtener Sesiones del Rango (Para asegurar mapeo config_id si el pedido no lo tiene)
+      // 4. Obtener Sesiones del Rango
       const sessions = await client.searchRead('pos.session', [
         ['config_id', 'in', filteredConfigs.map(c => c.id)],
         ['start_at', '<=', `${dateRange.end} 23:59:59`],
@@ -111,7 +119,6 @@ const App: React.FC = () => {
       const productIds = Array.from(new Set(orderLines.map(l => Array.isArray(l.product_id) ? l.product_id[0] : null).filter(Boolean)));
       let costsMap: Record<number, number> = {};
       if (productIds.length > 0) {
-        // En Odoo v14 standard_price suele estar en product.product, pero hereda de template.
         const productData = await client.rpcCall('object', 'execute_kw', [
           config.db, (client as any).uid, config.apiKey,
           'product.product', 'read',
@@ -130,7 +137,6 @@ const App: React.FC = () => {
       // 8. Consolidar Estadísticas
       const stats: any = {};
       filteredConfigs.forEach(conf => {
-        // Un pedido pertenece a esta caja si tiene el config_id directo O si su sesión pertenece a esta caja
         const posOrders = orders.filter(o => {
           const directMatch = o.config_id && o.config_id[0] === conf.id;
           const sessionMatch = o.session_id && sessionToConfigMap[o.session_id[0]] === conf.id;
@@ -197,10 +203,18 @@ const App: React.FC = () => {
     if (term.length < 3) return;
     setLoading(true);
     try {
+      // Sincronizar solo el stock del Almacén Principal (PRINCIPAL1) usando context
+      const fields = ['name', 'default_code', 'list_price', 'qty_available'];
+      const options: any = { limit: 15 };
+      
+      if (originWarehouseId) {
+        options.context = { warehouse: originWarehouseId };
+      }
+
       const prods = await client.searchRead('product.product', [
         '|', ['name', 'ilike', term], ['default_code', 'ilike', term],
         ['sale_ok', '=', true]
-      ], ['name', 'default_code', 'list_price', 'qty_available'], { limit: 15 });
+      ], fields, options);
       setProducts(prods);
     } catch (e) {
       console.error(e);

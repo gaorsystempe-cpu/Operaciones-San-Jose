@@ -42,7 +42,6 @@ const App: React.FC = () => {
   
   const [posConfigs, setPosConfigs] = useState<any[]>([]);
   const [posSalesData, setPosSalesData] = useState<any>({});
-  const [selectedPos, setSelectedPos] = useState<any>(null);
   const [dateRange, setDateRange] = useState({ 
     start: getPeruDateString(), 
     end: getPeruDateString() 
@@ -61,10 +60,12 @@ const App: React.FC = () => {
     setLoading(true);
     setErrorLog(null);
     try {
+      // 1. Identificar Compañía
       const companies = await client.searchRead('res.company', [['name', 'ilike', 'SAN JOSE']], ['id']);
       if (!companies || !companies.length) throw new Error("Compañía San José no encontrada.");
       const sanJoseId = companies[0].id;
 
+      // 2. Cargar Cajas (pos.config)
       const configs = await client.searchRead('pos.config', 
         [['company_id', '=', sanJoseId]], 
         ['name', 'id', 'current_session_id', 'current_session_state']
@@ -76,9 +77,22 @@ const App: React.FC = () => {
       );
       setPosConfigs(filteredConfigs);
 
+      // 3. Cargar Almacenes
       const ws = await client.searchRead('stock.warehouse', [['company_id', '=', sanJoseId]], ['name', 'id', 'code']);
       setWarehouses(ws || []);
 
+      // 4. Obtener Sesiones del Rango (Para asegurar mapeo config_id si el pedido no lo tiene)
+      const sessions = await client.searchRead('pos.session', [
+        ['config_id', 'in', filteredConfigs.map(c => c.id)],
+        ['start_at', '<=', `${dateRange.end} 23:59:59`],
+        ['stop_at', '>=', `${dateRange.start} 00:00:00`]
+      ], ['id', 'config_id']);
+      const sessionToConfigMap: Record<number, number> = {};
+      sessions.forEach((s: any) => {
+        if (s.config_id) sessionToConfigMap[s.id] = s.config_id[0];
+      });
+
+      // 5. Cargar Pedidos
       const orders = await client.searchRead('pos.order', [
         ['company_id', '=', sanJoseId],
         ['date_order', '>=', `${dateRange.start} 00:00:00`],
@@ -87,6 +101,8 @@ const App: React.FC = () => {
       ], ['id', 'amount_total', 'amount_tax', 'state', 'date_order', 'config_id', 'session_id']) || [];
 
       const orderIds = orders.map(o => o.id);
+      
+      // 6. Cargar Líneas y Vincular Costos
       const orderLines = orderIds.length > 0 ? await client.searchRead('pos.order.line',
         [['order_id', 'in', orderIds]],
         ['product_id', 'qty', 'price_subtotal_incl', 'order_id']
@@ -95,25 +111,33 @@ const App: React.FC = () => {
       const productIds = Array.from(new Set(orderLines.map(l => Array.isArray(l.product_id) ? l.product_id[0] : null).filter(Boolean)));
       let costsMap: Record<number, number> = {};
       if (productIds.length > 0) {
-        const productCostsData = await client.rpcCall('object', 'execute_kw', [
+        // En Odoo v14 standard_price suele estar en product.product, pero hereda de template.
+        const productData = await client.rpcCall('object', 'execute_kw', [
           config.db, (client as any).uid, config.apiKey,
           'product.product', 'read',
-          [productIds, ['standard_price']],
+          [productIds, ['standard_price', 'product_tmpl_id']],
           {}
         ]);
-        (productCostsData || []).forEach((p: any) => costsMap[p.id] = p.standard_price || 0);
+        (productData || []).forEach((p: any) => costsMap[p.id] = p.standard_price || 0);
       }
 
+      // 7. Cargar Pagos
       const payments = orderIds.length > 0 ? await client.searchRead('pos.payment', 
         [['pos_order_id', 'in', orderIds]], 
         ['amount', 'payment_method_id', 'pos_order_id']
       ) : [];
 
+      // 8. Consolidar Estadísticas
       const stats: any = {};
       filteredConfigs.forEach(conf => {
-        const posOrders = orders.filter(o => o.config_id && o.config_id[0] === conf.id);
+        // Un pedido pertenece a esta caja si tiene el config_id directo O si su sesión pertenece a esta caja
+        const posOrders = orders.filter(o => {
+          const directMatch = o.config_id && o.config_id[0] === conf.id;
+          const sessionMatch = o.session_id && sessionToConfigMap[o.session_id[0]] === conf.id;
+          return directMatch || sessionMatch;
+        });
+
         const posOrderIds = posOrders.map(o => o.id);
-        
         const totalSales = posOrders.reduce((acc, curr) => acc + (curr.amount_total || 0), 0);
         const posLines = orderLines.filter(l => l.order_id && posOrderIds.includes(l.order_id[0]));
         
@@ -134,7 +158,12 @@ const App: React.FC = () => {
           productStats[pName].margin = productStats[pName].total - productStats[pName].cost;
         });
 
-        const posPayments = payments.filter(p => p.pos_order_id && posOrderIds.includes(p.pos_order_id[0]));
+        const posPayments = payments.filter(p => {
+          if (!p.pos_order_id) return false;
+          const pOrderId = Array.isArray(p.pos_order_id) ? p.pos_order_id[0] : p.pos_order_id;
+          return posOrderIds.includes(pOrderId);
+        });
+
         const methodStats: any = {};
         posPayments.forEach(p => {
           const mName = Array.isArray(p.payment_method_id) ? p.payment_method_id[1] : 'Efectivo';
@@ -257,7 +286,6 @@ const App: React.FC = () => {
 
   return (
     <div className="h-screen flex flex-col bg-odoo-bg overflow-hidden">
-      {/* Odoo Top Navbar */}
       <header className="h-12 bg-odoo-primary text-white flex items-center justify-between px-4 shrink-0 shadow-md z-50">
         <div className="flex items-center h-full">
           <button className="h-full px-3 hover:bg-black/10 transition-colors" title="App Switcher">
@@ -296,7 +324,6 @@ const App: React.FC = () => {
       </header>
 
       <div className="flex-1 flex overflow-hidden">
-        {/* Modern Odoo Sidebar */}
         <aside className="w-64 bg-white border-r border-odoo-border hidden md:flex flex-col shrink-0 py-4">
           <div className="flex-1 space-y-1">
              <div className="px-6 mb-4">
@@ -340,10 +367,9 @@ const App: React.FC = () => {
           </div>
         </aside>
 
-        {/* Main Content Area */}
         <main className="flex-1 overflow-y-auto p-6 md:p-10 custom-scrollbar relative bg-odoo-bg">
           {activeTab === 'dashboard' && <Dashboard posConfigs={posConfigs} posSalesData={posSalesData} lastSync={lastSync} />}
-          {activeTab === 'ventas' && <AuditModule posConfigs={posConfigs} posSalesData={posSalesData} onSelect={setSelectedPos} selectedPos={setSelectedPos} onCloseDetail={() => setSelectedPos(null)} />}
+          {activeTab === 'ventas' && <AuditModule posConfigs={posConfigs} posSalesData={posSalesData} onSelect={(pos) => setPosSalesData((prev:any) => ({...prev, _selected: pos}))} selectedPos={posSalesData._selected} onCloseDetail={() => setPosSalesData((prev:any) => ({...prev, _selected: null}))} />}
           {activeTab === 'pedidos' && (
             <OrderModule 
               productSearch={productSearch} 

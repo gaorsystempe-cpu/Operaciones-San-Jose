@@ -7,7 +7,6 @@ import {
 import { OdooClient } from './services/odooService';
 import { AppConfig } from './types';
 
-// Importación de módulos refactorizados
 import { Dashboard } from './components/Dashboard';
 import { AuditModule } from './components/AuditModule';
 import { OrderModule } from './components/OrderModule';
@@ -117,11 +116,14 @@ const App: React.FC = () => {
         ['product_id', 'qty', 'price_subtotal_incl', 'order_id']
       ) : [];
 
+      // MEJORA: Consulta de costos con contexto de compañía para evitar 0% de margen
       const productIds = Array.from(new Set((orderLines || []).map(l => Array.isArray(l.product_id) ? l.product_id[0] : null).filter(Boolean)));
-      const productCostsData = productIds.length > 0 ? await client.searchRead('product.product',
-        [['id', 'in', productIds]],
-        ['id', 'standard_price']
-      ) : [];
+      const productCostsData = productIds.length > 0 ? await client.rpcCall('object', 'execute_kw', [
+        config.db, (client as any).uid, config.apiKey,
+        'product.product', 'read',
+        [productIds, ['standard_price']],
+        { context: { company_id: sanJoseId } }
+      ]) : [];
       
       const costsMap: Record<number, number> = {};
       (productCostsData || []).forEach((p: any) => costsMap[p.id] = p.standard_price || 0);
@@ -131,6 +133,18 @@ const App: React.FC = () => {
         const confSessions = sessions.filter(s => s.config_id && s.config_id[0] === conf.id);
         const confSessionIds = confSessions.map(s => s.id);
         
+        // Determinar estado real basado en actividad diaria
+        const latestSession = confSessions[0]; // Ordenadas desc por start_at
+        const rawState = conf.current_session_state || (latestSession ? latestSession.state : 'false');
+        
+        const stateMapping: any = {
+          'opened': 'ABIERTO',
+          'opening_control': 'ABRIENDO',
+          'closing_control': 'EN CIERRE',
+          'closed': 'CERRADO',
+          'false': 'SIN SESIÓN'
+        };
+
         const methodStats: any = {};
         (payments || []).filter(p => p.session_id && confSessionIds.includes(p.session_id[0])).forEach(p => {
           const mName = Array.isArray(p.payment_method_id) ? p.payment_method_id[1] : 'Desconocido';
@@ -161,8 +175,8 @@ const App: React.FC = () => {
         const totalSales = confSessions.reduce((a, b) => a + (b.total_payments_amount || 0), 0);
 
         stats[conf.id] = {
-          isOnline: conf.current_session_state === 'opened' || conf.current_session_state === 'opening_control',
-          rawState: conf.current_session_state || 'SIN SESIÓN',
+          isOnline: rawState === 'opened' || rawState === 'opening_control',
+          rawState: stateMapping[rawState] || rawState.toUpperCase(),
           totalSales: totalSales,
           totalCost: totalCost,
           margin: totalSales - totalCost,
@@ -179,7 +193,7 @@ const App: React.FC = () => {
       setLastSync(new Date().toLocaleTimeString('es-PE'));
       fetchMyOrders();
     } catch (e: any) { 
-      console.error("Fetch Data Error:", e);
+      console.error("Critical Sync Error:", e);
       setErrorLog(e.message || "Fallo en sincronización Odoo."); 
     } finally { setLoading(false); }
   }, [client, view, dateRange, config.companyName, fetchMyOrders]);
@@ -225,7 +239,7 @@ const App: React.FC = () => {
           location_id: mainWarehouse.lot_stock_id[0], location_dest_id: targetWarehouse.lot_stock_id[0],
         });
       }
-      alert("Transferencia borrador registrada correctamente.");
+      alert("Transferencia registrada exitosamente.");
       setCart([]); fetchMyOrders(); setActiveTab('pedidos');
     } catch (e: any) { alert("Error: " + e.message); } finally { setLoading(false); }
   };
@@ -236,12 +250,12 @@ const App: React.FC = () => {
     setErrorLog(null);
     try {
       const uid = await client.authenticate(config.user, config.apiKey);
-      if (!uid) throw new Error("Credenciales maestras de API incorrectas.");
+      if (!uid) throw new Error("Error de API Key.");
       const user = await client.searchRead('res.users', [['login', '=', loginInput]], ['name'], { limit: 1 });
-      if (!user || !user.length) throw new Error("ID de usuario no existe en Odoo.");
+      if (!user || !user.length) throw new Error("Usuario no encontrado.");
       setSession({ name: user[0].name });
       setView('app');
-    } catch (e: any) { setErrorLog(e.message || "Acceso denegado."); } finally { setLoading(false); }
+    } catch (e: any) { setErrorLog(e.message); } finally { setLoading(false); }
   };
 
   if (view === 'login') return (
@@ -249,14 +263,13 @@ const App: React.FC = () => {
       <div className="bg-white w-full max-w-[440px] shadow-2xl rounded-sm border-t-4 border-odoo-primary overflow-hidden">
         <div className="p-10 space-y-8 text-center">
           <div className="w-24 h-24 bg-odoo-primary rounded-lg flex items-center justify-center text-white text-5xl font-bold italic mx-auto shadow-inner">SJ</div>
-          <div><h1 className="text-xl font-black text-gray-800 uppercase">San José Hub</h1><p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">Operaciones Inteligentes</p></div>
+          <div><h1 className="text-xl font-black text-gray-800 uppercase">Boticas San José</h1><p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">Control de Gestión Odoo 18</p></div>
           <form onSubmit={handleLogin} className="space-y-6 text-left">
-            <div className="space-y-1"><label className="text-xs font-black text-gray-500 uppercase">Identificador Odoo</label><input type="text" className="w-full p-4 bg-gray-50 border border-gray-300 rounded-sm outline-none font-bold focus:border-odoo-primary" placeholder="Ej. soporte" value={loginInput} onChange={e => setLoginInput(e.target.value)} required /></div>
-            <button className="w-full bg-odoo-primary text-white py-4 rounded-sm font-black uppercase tracking-widest shadow-md hover:bg-[#5a3c52] transition-colors">{loading ? <Loader2 className="animate-spin mx-auto" size={18}/> : 'Ingresar al Panel'}</button>
+            <div className="space-y-1"><label className="text-xs font-black text-gray-500 uppercase">ID Usuario</label><input type="text" className="w-full p-4 bg-gray-50 border border-gray-300 rounded-sm outline-none font-bold focus:border-odoo-primary" placeholder="Ej. soporte" value={loginInput} onChange={e => setLoginInput(e.target.value)} required /></div>
+            <button className="w-full bg-odoo-primary text-white py-4 rounded-sm font-black uppercase tracking-widest shadow-md hover:bg-[#5a3c52] transition-colors">{loading ? <Loader2 className="animate-spin mx-auto" size={18}/> : 'Entrar al Sistema'}</button>
           </form>
-          {errorLog && <div className="text-red-600 text-[10px] font-black uppercase flex items-center gap-2 justify-center bg-red-50 p-4 rounded border border-red-100 animate-pulse"><AlertTriangle size={14}/> {errorLog}</div>}
+          {errorLog && <div className="text-red-600 text-[10px] font-black uppercase flex items-center gap-2 justify-center bg-red-50 p-4 rounded border border-red-100"><AlertTriangle size={14}/> {errorLog}</div>}
         </div>
-        <div className="bg-gray-50 p-4 border-t text-center space-y-1"><p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">© 2026 BOTICAS SAN JOSE S.A.C.</p></div>
       </div>
     </div>
   );
@@ -279,34 +292,27 @@ const App: React.FC = () => {
         <aside className="w-72 bg-white border-r border-gray-200 hidden md:flex flex-col shrink-0 shadow-sm">
           <div className="p-6 border-b bg-gray-50/50 space-y-6">
             <div>
-              <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2 mb-4"><Calendar size={14}/> Filtro de Fecha</h3>
+              <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2 mb-4"><Calendar size={14}/> Filtro Global</h3>
               <div className="space-y-3">
                 <input type="date" value={dateRange.start} onChange={e => setDateRange({...dateRange, start: e.target.value})} className="w-full p-2.5 text-xs border rounded-sm font-bold outline-none focus:border-odoo-primary"/>
                 <input type="date" value={dateRange.end} onChange={e => setDateRange({...dateRange, end: e.target.value})} className="w-full p-2.5 text-xs border rounded-sm font-bold outline-none focus:border-odoo-primary"/>
-                <button onClick={fetchData} className="w-full p-3 bg-odoo-primary text-white rounded-sm text-[10px] font-black uppercase tracking-widest shadow-md hover:bg-[#5a3c52] transition-all flex items-center justify-center gap-2"><RefreshCw size={14} className={loading ? 'animate-spin' : ''}/> Actualizar Datos</button>
+                <button onClick={fetchData} className="w-full p-3 bg-odoo-primary text-white rounded-sm text-[10px] font-black uppercase tracking-widest shadow-md hover:bg-[#5a3c52] transition-all flex items-center justify-center gap-2"><RefreshCw size={14} className={loading ? 'animate-spin' : ''}/> Sincronizar Odoo</button>
               </div>
             </div>
-          </div>
-          <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
-             {activeTab === 'pedidos' && myOrders.length > 0 && (
-               <div className="animate-in slide-in-from-left duration-300"><p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4 border-b pb-2">Status Logístico</p>
-                  {myOrders.map(o => (<div key={o.id} className="text-[10px] bg-gray-50 p-3 rounded-sm mb-3 border border-gray-100 shadow-sm"><div className="flex justify-between font-black mb-1"><span>{o.name}</span><span className={`px-1.5 rounded-full ${o.state === 'done' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{o.state.toUpperCase()}</span></div><p className="text-gray-400 font-bold truncate">{o.location_dest_id[1]}</p></div>))}
-               </div>
-             )}
           </div>
         </aside>
         <main className="flex-1 overflow-y-auto p-10 custom-scrollbar">
           {errorLog && (
-            <div className="mb-6 p-4 bg-red-100 border-l-4 border-red-600 text-red-700 text-xs font-bold flex items-center gap-3">
+            <div className="mb-6 p-4 bg-red-100 border-l-4 border-red-600 text-red-700 text-xs font-bold flex items-center gap-3 animate-in shake">
               <AlertTriangle size={18}/> {errorLog}
             </div>
           )}
           {activeTab === 'dashboard' && <Dashboard posConfigs={posConfigs} posSalesData={posSalesData} lastSync={lastSync} />}
-          {activeTab === 'ventas' && <AuditModule posConfigs={posConfigs} posSalesData={posSalesData} onSelect={setSelectedPos} selectedPos={selectedPos} onCloseDetail={() => setSelectedPos(null)} />}
+          {activeTab === 'ventas' && <AuditModule posConfigs={posConfigs} posSalesData={posSalesData} onSelect={setSelectedPos} selectedPos={setSelectedPos} onCloseDetail={() => setSelectedPos(null)} />}
           {activeTab === 'pedidos' && (<OrderModule productSearch={productSearch} setProductSearch={setProductSearch} onSearch={handleProductSearch} products={products} cart={cart} setCart={setCart} warehouses={warehouses} targetWarehouseId={targetWarehouseId} setTargetWarehouseId={setTargetWarehouseId} onSubmitOrder={createWarehouseOrder} loading={loading} />)}
         </main>
       </div>
-      {loading && (<div className="fixed bottom-8 right-8 z-[200] bg-white px-8 py-5 rounded shadow-2xl border-l-4 border-odoo-primary flex items-center gap-5 animate-in slide-in-from-right"><Loader2 className="animate-spin text-odoo-primary" size={24}/><div className="space-y-1"><p className="text-[11px] font-black uppercase text-gray-800 tracking-widest">Sincronizando Odoo v18...</p></div></div>)}
+      {loading && (<div className="fixed bottom-8 right-8 z-[200] bg-white px-8 py-5 rounded shadow-2xl border-l-4 border-odoo-primary flex items-center gap-5 animate-in slide-in-from-right"><Loader2 className="animate-spin text-odoo-primary" size={24}/><div className="space-y-1"><p className="text-[11px] font-black uppercase text-gray-800 tracking-widest">Calculando Utilidades...</p></div></div>)}
     </div>
   );
 };

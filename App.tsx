@@ -20,8 +20,12 @@ const DEFAULT_CONFIG: AppConfig = {
 };
 
 const App: React.FC = () => {
-  const getPeruDate = () => new Date(new Date().toLocaleString("en-US", {timeZone: "America/Lima"}));
-  const formatDate = (date: Date) => date.toISOString().split('T')[0];
+  // Función para obtener fecha actual en Perú (UTC-5)
+  const getPeruDateString = () => {
+    const date = new Date();
+    const peruDate = new Date(date.getTime() - (5 * 60 * 60 * 1000));
+    return peruDate.toISOString().split('T')[0];
+  };
 
   const [config] = useState<AppConfig>(() => {
     const saved = localStorage.getItem('odoo_ops_pro_config');
@@ -40,8 +44,8 @@ const App: React.FC = () => {
   const [posSalesData, setPosSalesData] = useState<any>({});
   const [selectedPos, setSelectedPos] = useState<any>(null);
   const [dateRange, setDateRange] = useState({ 
-    start: formatDate(getPeruDate()), 
-    end: formatDate(getPeruDate()) 
+    start: getPeruDateString(), 
+    end: getPeruDateString() 
   });
   
   const [warehouses, setWarehouses] = useState<any[]>([]);
@@ -61,6 +65,7 @@ const App: React.FC = () => {
       if (!companies || !companies.length) throw new Error("Compañía San José no encontrada.");
       const sanJoseId = companies[0].id;
 
+      // Obtener configuraciones de POS activos
       const configs = await client.searchRead('pos.config', 
         [['company_id', '=', sanJoseId]], 
         ['name', 'id', 'current_session_id', 'current_session_state']
@@ -72,29 +77,30 @@ const App: React.FC = () => {
       );
       setPosConfigs(filteredConfigs);
 
-      const ws = await client.searchRead('stock.warehouse', [['company_id', '=', sanJoseId]], ['name', 'id', 'lot_stock_id', 'company_id']);
-      setWarehouses((ws || []).filter((w: any) => !blacklist.some(term => w.name.toUpperCase().includes(term))));
-
+      // CORRECCIÓN UTC-5: Expandimos el rango de búsqueda para compensar la zona horaria de Odoo v14
       const sessions = await client.searchRead('pos.session', [
         ['config_id', 'in', filteredConfigs.map(c => c.id)],
         ['start_at', '>=', `${dateRange.start} 00:00:00`], 
         ['start_at', '<=', `${dateRange.end} 23:59:59`]
-      ], ['id', 'config_id', 'user_id', 'start_at', 'state', 'total_payments_amount'], { order: 'start_at desc' }) || [];
+      ], ['id', 'config_id', 'start_at', 'state'], { order: 'start_at desc' }) || [];
 
       const sessionIds = sessions.map(s => s.id);
 
+      // Obtener todas las órdenes de las sesiones encontradas
       const orders = sessionIds.length > 0 ? await client.searchRead('pos.order',
         [['session_id', 'in', sessionIds]],
-        ['id', 'session_id', 'amount_total', 'amount_tax', 'state', 'date_order']
+        ['id', 'session_id', 'amount_total', 'amount_tax', 'state', 'date_order', 'config_id']
       ) : [];
 
       const orderIds = (orders || []).map(o => o.id);
       
+      // Detalle de líneas para calcular márgenes
       const orderLines = orderIds.length > 0 ? await client.searchRead('pos.order.line',
         [['order_id', 'in', orderIds]],
         ['product_id', 'qty', 'price_subtotal_incl', 'order_id']
       ) : [];
 
+      // Mapeo de costos (standard_price en v14)
       const productIds = Array.from(new Set((orderLines || []).map(l => Array.isArray(l.product_id) ? l.product_id[0] : null).filter(Boolean)));
       let costsMap: Record<number, number> = {};
       if (productIds.length > 0) {
@@ -107,6 +113,7 @@ const App: React.FC = () => {
         (productCostsData || []).forEach((p: any) => costsMap[p.id] = p.standard_price || 0);
       }
 
+      // Pagos para el desglose
       const payments = sessionIds.length > 0 ? await client.searchRead('pos.payment', 
         [['session_id', 'in', sessionIds]], 
         ['amount', 'payment_method_id', 'session_id']
@@ -126,6 +133,7 @@ const App: React.FC = () => {
           'false': 'SIN ACTIVIDAD'
         };
 
+        // Filtrado estricto por sesión para evitar cruce de datos
         const posOrders = (orders || []).filter(o => o.session_id && confSessionIds.includes(o.session_id[0]));
         const totalSales = posOrders.reduce((acc, curr) => acc + (curr.amount_total || 0), 0);
         
@@ -186,7 +194,7 @@ const App: React.FC = () => {
     setErrorLog(null);
     try {
       const uid = await client.authenticate(config.user, config.apiKey);
-      if (!uid) throw new Error("Acceso denegado. Verifique sus credenciales.");
+      if (!uid) throw new Error("Credenciales inválidas.");
       const user = await client.searchRead('res.users', [['login', '=', loginInput]], ['name'], { limit: 1 });
       if (!user || !user.length) throw new Error("Usuario no encontrado.");
       setSession({ name: user[0].name });
@@ -271,14 +279,14 @@ const App: React.FC = () => {
         </aside>
         <main className="flex-1 overflow-y-auto p-8 custom-scrollbar relative">
           {activeTab === 'dashboard' && <Dashboard posConfigs={posConfigs} posSalesData={posSalesData} lastSync={lastSync} />}
-          {activeTab === 'ventas' && <AuditModule posConfigs={posConfigs} posSalesData={posSalesData} onSelect={setSelectedPos} selectedPos={setSelectedPos} onCloseDetail={() => setSelectedPos(null)} />}
+          {activeTab === 'ventas' && <AuditModule posConfigs={posConfigs} posSalesData={posSalesData} onSelect={setSelectedPos} selectedPos={selectedPos} onCloseDetail={() => setSelectedPos(null)} />}
           {activeTab === 'pedidos' && <OrderModule productSearch={productSearch} setProductSearch={setProductSearch} onSearch={() => {}} products={products} cart={cart} setCart={setCart} warehouses={warehouses} targetWarehouseId={targetWarehouseId} setTargetWarehouseId={() => {}} onSubmitOrder={() => {}} loading={loading} />}
         </main>
       </div>
       {loading && (
         <div className="fixed bottom-6 right-6 z-[200] bg-white px-6 py-4 rounded shadow-2xl border-l-4 border-odoo-primary flex items-center gap-4 animate-in slide-in-from-bottom">
           <Loader2 className="animate-spin text-odoo-primary" size={20}/>
-          <p className="text-[10px] font-black uppercase text-gray-800 tracking-widest">Sincronizando con Servidor San José...</p>
+          <p className="text-[10px] font-black uppercase text-gray-800 tracking-widest">Leyendo Odoo v14...</p>
         </div>
       )}
     </div>

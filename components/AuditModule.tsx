@@ -30,6 +30,9 @@ export const AuditModule: React.FC<AuditModuleProps> = ({ posConfigs, posSalesDa
     XLSX.writeFile(workbook, `Reporte_SanJose_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
+  // Obtener datos del POS seleccionado de forma segura
+  const currentData = selectedPos ? posSalesData[selectedPos.id] : null;
+
   return (
     <div className="max-w-7xl mx-auto space-y-6 pb-20">
       <div className="bg-white border border-gray-200 rounded p-6 flex justify-between items-center shadow-sm">
@@ -114,15 +117,15 @@ export const AuditModule: React.FC<AuditModuleProps> = ({ posConfigs, posSalesDa
                 <div className="grid grid-cols-3 gap-3">
                    <div className="p-4 bg-white border rounded shadow-sm text-center">
                       <p className="text-[9px] font-black text-gray-400 uppercase mb-1 tracking-widest">Ingreso</p>
-                      <p className="text-sm font-black text-gray-800">S/ {(posSalesData[selectedPos.id]?.totalSales || 0).toLocaleString('es-PE', {minimumFractionDigits: 2})}</p>
+                      <p className="text-sm font-black text-gray-800">S/ {(currentData?.totalSales || 0).toLocaleString('es-PE', {minimumFractionDigits: 2})}</p>
                    </div>
                    <div className="p-4 bg-white border rounded shadow-sm text-center">
                       <p className="text-[9px] font-black text-gray-400 uppercase mb-1 tracking-widest">Costo</p>
-                      <p className="text-sm font-black text-red-600">S/ {(posSalesData[selectedPos.id]?.totalCost || 0).toLocaleString('es-PE', {minimumFractionDigits: 2})}</p>
+                      <p className="text-sm font-black text-red-600">S/ {(currentData?.totalCost || 0).toLocaleString('es-PE', {minimumFractionDigits: 2})}</p>
                    </div>
                    <div className="p-4 bg-green-50 border border-green-100 rounded text-center">
                       <p className="text-[9px] font-black text-green-600 uppercase mb-1 tracking-widest">Utilidad</p>
-                      <p className="text-sm font-black text-green-700">S/ {(posSalesData[selectedPos.id]?.margin || 0).toLocaleString('es-PE', {minimumFractionDigits: 2})}</p>
+                      <p className="text-sm font-black text-green-700">S/ {(currentData?.margin || 0).toLocaleString('es-PE', {minimumFractionDigits: 2})}</p>
                    </div>
                 </div>
 
@@ -131,14 +134,14 @@ export const AuditModule: React.FC<AuditModuleProps> = ({ posConfigs, posSalesDa
                      <ListChecks size={16} className="text-odoo-primary"/> Medios de Pago
                    </h4>
                    <div className="space-y-2">
-                      {Object.entries(posSalesData[selectedPos.id]?.payments || {}).map(([method, amount]: [any, any]) => (
+                      {Object.entries(currentData?.payments || {}).map(([method, amount]: [any, any]) => (
                         <div key={method} className="flex justify-between items-center p-4 bg-gray-50 border border-gray-100 rounded">
                            <span className="text-[10px] font-black text-gray-600 uppercase tracking-tight">{method}</span>
                            <span className="text-sm font-black text-gray-800">S/ {amount.toLocaleString('es-PE', {minimumFractionDigits: 2})}</span>
                         </div>
                       ))}
-                      {Object.keys(posSalesData[selectedPos.id]?.payments || {}).length === 0 && (
-                        <p className="text-[10px] text-center text-gray-400 py-4 uppercase border border-dashed rounded">Sin pagos registrados hoy</p>
+                      {Object.keys(currentData?.payments || {}).length === 0 && (
+                        <p className="text-[10px] text-center text-gray-400 py-4 uppercase border border-dashed rounded">Sin pagos registrados hoy en este rango</p>
                       )}
                    </div>
                 </section>
@@ -149,13 +152,13 @@ export const AuditModule: React.FC<AuditModuleProps> = ({ posConfigs, posSalesDa
                    </h4>
                    <div className="bg-white border rounded shadow-sm overflow-hidden">
                       <div className="divide-y divide-gray-100">
-                        {(posSalesData[selectedPos.id]?.products || []).length === 0 ? (
-                           <p className="p-10 text-center text-[10px] font-black text-gray-400 uppercase">Sin productos vendidos</p>
-                        ) : (posSalesData[selectedPos.id]?.products || []).slice(0, 50).map((p: any, idx: number) => (
+                        {(currentData?.products || []).length === 0 ? (
+                           <p className="p-10 text-center text-[10px] font-black text-gray-400 uppercase">Sin productos vendidos o cargando...</p>
+                        ) : (currentData?.products || []).slice(0, 50).map((p: any, idx: number) => (
                           <div key={idx} className="p-4 flex justify-between items-center hover:bg-gray-50 transition-all">
                              <div className="max-w-[70%]">
                                 <p className="text-[10px] font-black text-gray-700 uppercase truncate tracking-tight">{p.name}</p>
-                                <p className="text-[8px] font-bold text-gray-400 uppercase mt-0.5">{p.qty} Unid | Costo: S/ {(p.cost / (p.qty || 1)).toFixed(2)}</p>
+                                <p className="text-[8px] font-bold text-gray-400 uppercase mt-0.5">{p.qty} Unid | Costo Promedio: S/ {(p.cost / (p.qty || 1)).toFixed(2)}</p>
                              </div>
                              <div className="text-right">
                                 <span className={`text-[11px] font-black ${p.margin > 0 ? 'text-green-600' : 'text-red-500'}`}>
@@ -171,7 +174,7 @@ export const AuditModule: React.FC<AuditModuleProps> = ({ posConfigs, posSalesDa
 
              <div className="p-6 border-t bg-gray-50">
                 <button 
-                  onClick={() => alert("Generando reporte...")}
+                  onClick={() => alert("Generando reporte Excel para esta sede...")}
                   className="w-full bg-odoo-primary hover:bg-[#5a3c52] text-white py-4 rounded font-black text-[10px] uppercase tracking-[0.2em] shadow-lg flex items-center justify-center gap-3 transition-all"
                 >
                   <FileSpreadsheet size={18}/> Descargar Reporte de Sede

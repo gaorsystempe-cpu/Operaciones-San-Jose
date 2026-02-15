@@ -73,7 +73,8 @@ const App: React.FC = () => {
       const filteredConfigs = configs.filter((c: any) => c.name.toUpperCase().includes('BOTICA') && !c.name.toUpperCase().includes('CRUZ'));
       setPosConfigs(filteredConfigs);
 
-      const ws = await client.searchRead('stock.warehouse', [], ['name', 'id', 'lot_stock_id']);
+      // Ahora traemos también el company_id de los almacenes para evitar errores de incompatibilidad
+      const ws = await client.searchRead('stock.warehouse', [], ['name', 'id', 'lot_stock_id', 'company_id']);
       setWarehouses(ws);
 
       const sessionDomain = [['config_id', 'in', filteredConfigs.map(c => c.id)], ['start_at', '>=', `${dateRange.start} 00:00:00`], ['start_at', '<=', `${dateRange.end} 23:59:59`]];
@@ -126,15 +127,19 @@ const App: React.FC = () => {
       const mainWarehouse = warehouses.find(w => w.name.toUpperCase().includes('PRINCIPAL1'));
       const targetWarehouse = warehouses.find(w => w.id === targetWarehouseId);
       
-      const pickingTypes = await client.searchRead('stock.picking.type', [['code', '=', 'internal'], ['warehouse_id', '=', mainWarehouse.id]], ['id']);
-      if (!pickingTypes.length) throw new Error("Operación interna no configurada en Odoo.");
+      if (!mainWarehouse) throw new Error("No se pudo localizar el Almacén Principal 1.");
 
+      const pickingTypes = await client.searchRead('stock.picking.type', [['code', '=', 'internal'], ['warehouse_id', '=', mainWarehouse.id]], ['id']);
+      if (!pickingTypes.length) throw new Error("Operación interna no configurada en Odoo para este almacén.");
+
+      // SOLUCIÓN AL ERROR DE EMPRESA: Forzamos el company_id al del almacén de origen (San José)
       const pickingId = await client.create('stock.picking', {
         picking_type_id: pickingTypes[0].id,
         location_id: mainWarehouse.lot_stock_id[0],
         location_dest_id: targetWarehouse.lot_stock_id[0],
         origin: `PEDIDO APP - ${session.name}`,
         move_type: 'direct',
+        company_id: mainWarehouse.company_id[0], // <--- KEY FIX: Asegura compatibilidad legal
         user_id: (client as any).uid
       });
 
@@ -145,6 +150,7 @@ const App: React.FC = () => {
           product_uom_qty: item.qty,
           product_uom: item.uom_id[0],
           picking_id: pickingId,
+          company_id: mainWarehouse.company_id[0], // <--- KEY FIX: Los movimientos también deben ser de la misma empresa
           location_id: mainWarehouse.lot_stock_id[0],
           location_dest_id: targetWarehouse.lot_stock_id[0],
         });
@@ -155,12 +161,12 @@ const App: React.FC = () => {
         'stock.picking', 'action_confirm', [[pickingId]]
       ]);
 
-      alert("¡Transferencia creada exitosamente en Odoo!");
+      alert("¡Transferencia creada exitosamente en Odoo bajo la compañía correcta!");
       setCart([]);
       fetchMyOrders();
       setActiveTab('pedidos');
     } catch (e: any) {
-      alert("Error Odoo: " + e.message);
+      alert("Error Crítico de Odoo: " + e.message);
     } finally { setLoading(false); }
   };
 

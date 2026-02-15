@@ -37,13 +37,11 @@ const App: React.FC = () => {
   const [errorLog, setErrorLog] = useState<string | null>(null);
   const [loginInput, setLoginInput] = useState("");
   
-  // Estados de datos centralizados
   const [posConfigs, setPosConfigs] = useState<any[]>([]);
   const [posSalesData, setPosSalesData] = useState<any>({});
   const [selectedPos, setSelectedPos] = useState<any>(null);
   const [dateRange, setDateRange] = useState({ start: formatDate(getPeruDate()), end: formatDate(getPeruDate()) });
   
-  // Estados de Inventario
   const [warehouses, setWarehouses] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [productSearch, setProductSearch] = useState("");
@@ -69,15 +67,13 @@ const App: React.FC = () => {
     if (view !== 'app') return;
     setLoading(true);
     try {
-      // 1. Obtener el ID de la compañía San José para filtrar todo por este ID
       const companies = await client.searchRead('res.company', [['name', '=', config.companyName]], ['id']);
-      if (!companies.length) throw new Error("No se encontró la configuración de la compañía San José.");
+      if (!companies.length) throw new Error("Compañía San José no encontrada.");
       const sanJoseId = companies[0].id;
 
-      // 2. Definir lista de exclusión (Blacklist)
       const blacklist = ['CRUZ', 'CHALPON', 'INDACOCHEA', 'AMAY', 'P&P', 'P & P'];
 
-      // 3. Obtener POS Configs filtrados por compañía y excluyendo blacklist
+      // 1. Obtener Cajas (POS Configs) - Verificamos estado real de sesión
       const configs = await client.searchRead('pos.config', 
         [['company_id', '=', sanJoseId]], 
         ['name', 'id', 'current_session_id', 'current_session_state', 'company_id']
@@ -87,41 +83,68 @@ const App: React.FC = () => {
       );
       setPosConfigs(filteredConfigs);
 
-      // 4. Obtener Almacenes filtrados por compañía y excluyendo blacklist
+      // 2. Obtener Almacenes
       const ws = await client.searchRead('stock.warehouse', 
         [['company_id', '=', sanJoseId]], 
         ['name', 'id', 'lot_stock_id', 'company_id']
       );
-      const filteredWarehouses = ws.filter((w: any) => 
-        !blacklist.some(term => w.name.toUpperCase().includes(term))
-      );
-      setWarehouses(filteredWarehouses);
+      setWarehouses(ws.filter((w: any) => !blacklist.some(term => w.name.toUpperCase().includes(term))));
 
-      // 5. Obtener sesiones de las cajas filtradas
+      // 3. Obtener Sesiones (Incluimos las abiertas sin importar fecha para coincidir con Odoo)
       const sessionDomain = [
-        ['config_id', 'in', filteredConfigs.map(c => c.id)], 
+        ['config_id', 'in', filteredConfigs.map(c => c.id)],
+        '|',
+        ['state', '=', 'opened'],
+        '&',
         ['start_at', '>=', `${dateRange.start} 00:00:00`], 
         ['start_at', '<=', `${dateRange.end} 23:59:59`]
       ];
-      const sessions = await client.searchRead('pos.session', sessionDomain, ['id', 'config_id', 'user_id', 'start_at', 'state', 'cash_register_balance_end_real'], { order: 'start_at desc' });
+      const sessions = await client.searchRead('pos.session', sessionDomain, 
+        ['id', 'config_id', 'user_id', 'start_at', 'state', 'cash_register_balance_end_real', 'total_payments_amount'], 
+        { order: 'start_at desc' }
+      );
+
+      const sessionIds = sessions.map(s => s.id);
+
+      // 4. Obtener Pagos para desglose de métodos
+      const payments = sessionIds.length > 0 ? await client.searchRead('pos.payment', 
+        [['session_id', 'in', sessionIds]], 
+        ['amount', 'payment_method_id', 'session_id']
+      ) : [];
+
+      // 5. Obtener Pedidos para desglose de productos
+      const orders = sessionIds.length > 0 ? await client.searchRead('pos.order',
+        [['session_id', 'in', sessionIds]],
+        ['id', 'amount_total', 'session_id', 'lines']
+      ) : [];
 
       const stats: any = {};
       filteredConfigs.forEach(conf => {
         const confSessions = sessions.filter(s => s.config_id[0] === conf.id);
+        const confSessionIds = confSessions.map(s => s.id);
+        
+        // Pagos por método
+        const methodStats: any = {};
+        payments.filter(p => confSessionIds.includes(p.session_id[0])).forEach(p => {
+          const mName = p.payment_method_id[1];
+          methodStats[mName] = (methodStats[mName] || 0) + p.amount;
+        });
+
         stats[conf.id] = {
-          total: 0,
-          count: confSessions.length,
           isOnline: conf.current_session_state === 'opened',
           balance: confSessions.reduce((a, b) => a + (b.cash_register_balance_end_real || 0), 0),
-          sessions: confSessions
+          totalSales: confSessions.reduce((a, b) => a + (b.total_payments_amount || 0), 0),
+          count: confSessions.length,
+          sessions: confSessions,
+          payments: methodStats
         };
       });
+
       setPosSalesData(stats);
       setLastSync(new Date().toLocaleTimeString('es-PE'));
       fetchMyOrders();
     } catch (e: any) { 
-      console.error(e);
-      setErrorLog(e.message || "Fallo al conectar con el servidor RPC de Odoo."); 
+      setErrorLog(e.message || "Fallo en sincronización Odoo."); 
     }
     finally { setLoading(false); }
   }, [client, view, dateRange, config.companyName, fetchMyOrders]);
@@ -133,76 +156,47 @@ const App: React.FC = () => {
     try {
       const mainWarehouse = warehouses.find(w => w.name.toUpperCase().includes('PRINCIPAL1'));
       if (!mainWarehouse) return;
-
       const results = await client.rpcCall('object', 'execute_kw', [
         config.db, (client as any).uid, config.apiKey,
         'product.product', 'search_read',
         [['|', ['name', 'ilike', term], ['default_code', 'ilike', term], ['qty_available', '>', 0]]],
-        { 
-          fields: ['name', 'default_code', 'list_price', 'qty_available', 'uom_id'], 
-          limit: 12,
-          context: { location: mainWarehouse.lot_stock_id[0] } 
-        }
+        { fields: ['name', 'default_code', 'list_price', 'qty_available', 'uom_id'], limit: 12, context: { location: mainWarehouse.lot_stock_id[0] } }
       ]);
       setProducts(results);
     } catch (e) {}
   };
 
   const createWarehouseOrder = async () => {
-    if (!targetWarehouseId || cart.length === 0) return alert("Seleccione botica destino y productos.");
+    if (!targetWarehouseId || cart.length === 0) return alert("Seleccione botica destino.");
     setLoading(true);
     try {
       const mainWarehouse = warehouses.find(w => w.name.toUpperCase().includes('PRINCIPAL1'));
       const targetWarehouse = warehouses.find(w => w.id === targetWarehouseId);
-      
-      if (!mainWarehouse) throw new Error("No se pudo localizar el Almacén Principal 1 de San José.");
-
       const pickingTypes = await client.searchRead('stock.picking.type', [['code', '=', 'internal'], ['warehouse_id', '=', mainWarehouse.id]], ['id']);
-      if (!pickingTypes.length) throw new Error("Operación interna no configurada para el Almacén Principal 1.");
-
-      // SOLUCIÓN DEFINITIVA MULTI-COMPAÑÍA:
-      // Forzamos company_id al ID de San José obtenido del almacén de origen
       const pickingId = await client.create('stock.picking', {
         picking_type_id: pickingTypes[0].id,
         location_id: mainWarehouse.lot_stock_id[0],
         location_dest_id: targetWarehouse.lot_stock_id[0],
         origin: `PEDIDO APP - ${session.name}`,
-        move_type: 'direct',
         company_id: mainWarehouse.company_id[0], 
         user_id: (client as any).uid
       });
-
       for (const item of cart) {
         await client.create('stock.move', {
-          name: item.name,
-          product_id: item.id,
-          product_uom_qty: item.qty,
-          product_uom: item.uom_id[0],
-          picking_id: pickingId,
-          company_id: mainWarehouse.company_id[0], 
-          location_id: mainWarehouse.lot_stock_id[0],
-          location_dest_id: targetWarehouse.lot_stock_id[0],
+          name: item.name, product_id: item.id, product_uom_qty: item.qty, product_uom: item.uom_id[0],
+          picking_id: pickingId, company_id: mainWarehouse.company_id[0],
+          location_id: mainWarehouse.lot_stock_id[0], location_dest_id: targetWarehouse.lot_stock_id[0],
         });
       }
-
-      await client.rpcCall('object', 'execute_kw', [
-        config.db, (client as any).uid, config.apiKey,
-        'stock.picking', 'action_confirm', [[pickingId]]
-      ]);
-
-      alert("¡Transferencia creada exitosamente en Odoo (Compañía San José)!");
-      setCart([]);
-      fetchMyOrders();
-      setActiveTab('pedidos');
-    } catch (e: any) {
-      alert("Error Odoo: " + e.message);
-    } finally { setLoading(false); }
+      await client.rpcCall('object', 'execute_kw', [config.db, (client as any).uid, config.apiKey, 'stock.picking', 'action_confirm', [[pickingId]]]);
+      alert("Transferencia exitosa.");
+      setCart([]); fetchMyOrders(); setActiveTab('pedidos');
+    } catch (e: any) { alert("Error: " + e.message); } finally { setLoading(false); }
   };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setErrorLog(null);
     try {
       const uid = await client.authenticate(config.user, config.apiKey);
       if (!uid) throw new Error();
@@ -210,8 +204,7 @@ const App: React.FC = () => {
       if (!user.length) throw new Error();
       setSession({ name: user[0].name });
       setView('app');
-    } catch { setErrorLog("Acceso denegado. Usuario no encontrado."); }
-    finally { setLoading(false); }
+    } catch { setErrorLog("Usuario no encontrado."); } finally { setLoading(false); }
   };
 
   if (view === 'login') return (
@@ -219,104 +212,49 @@ const App: React.FC = () => {
       <div className="bg-white w-full max-w-[440px] shadow-2xl rounded-sm border-t-4 border-odoo-primary overflow-hidden">
         <div className="p-10 space-y-8 text-center">
           <div className="w-24 h-24 bg-odoo-primary rounded-lg flex items-center justify-center text-white text-5xl font-bold italic mx-auto shadow-inner">SJ</div>
-          <div>
-            <h1 className="text-xl font-bold text-gray-800">Boticas San José</h1>
-            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">Gestión de Operaciones</p>
-          </div>
+          <div><h1 className="text-xl font-bold text-gray-800">Boticas San José</h1><p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">Gestión de Operaciones</p></div>
           <form onSubmit={handleLogin} className="space-y-6 text-left">
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-gray-600 uppercase">ID de Usuario</label>
-              <input type="text" className="w-full p-3 bg-gray-50 border border-gray-300 rounded outline-none font-semibold focus:border-odoo-primary" placeholder="Ej. jose.herrera" value={loginInput} onChange={e => setLoginInput(e.target.value)} required />
-            </div>
-            <button className="w-full bg-odoo-primary text-white py-3.5 rounded font-bold uppercase tracking-wider shadow-md hover:bg-[#5a3c52]">
-              {loading ? <Loader2 className="animate-spin mx-auto" size={18}/> : 'Entrar al Sistema'}
-            </button>
+            <div className="space-y-1"><label className="text-xs font-bold text-gray-600 uppercase">ID de Usuario</label><input type="text" className="w-full p-3 bg-gray-50 border border-gray-300 rounded outline-none font-semibold focus:border-odoo-primary" placeholder="Ej. jose.herrera" value={loginInput} onChange={e => setLoginInput(e.target.value)} required /></div>
+            <button className="w-full bg-odoo-primary text-white py-3.5 rounded font-bold uppercase tracking-wider shadow-md hover:bg-[#5a3c52]">{loading ? <Loader2 className="animate-spin mx-auto" size={18}/> : 'Entrar al Sistema'}</button>
           </form>
           {errorLog && <div className="text-red-600 text-[10px] font-black uppercase flex items-center gap-2 justify-center"><AlertTriangle size={14}/> {errorLog}</div>}
         </div>
-        <div className="bg-gray-50 p-4 border-t text-center space-y-1">
-           <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">© 2026 CADENA DE BOTICAS SAN JOSE S.A.C.</p>
-           <p className="text-[9px] text-gray-400 font-medium">
-             Desarrollado por <a href="https://gaorsystem.vercel.app/" target="_blank" rel="noopener noreferrer" className="text-odoo-primary hover:underline font-bold transition-all">GAORSYSTEM PERU</a>
-           </p>
-        </div>
+        <div className="bg-gray-50 p-4 border-t text-center space-y-1"><p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">© 2026 CADENA DE BOTICAS SAN JOSE S.A.C.</p><p className="text-[9px] text-gray-400 font-medium">Desarrollado por <a href="https://gaorsystem.vercel.app/" target="_blank" className="text-odoo-primary font-bold">GAORSYSTEM PERU</a></p></div>
       </div>
     </div>
   );
 
   return (
     <div className="h-screen flex flex-col bg-[#F0F2F5]">
-      {/* Navbar Superior Odoo */}
       <header className="h-12 bg-odoo-primary text-white flex items-center justify-between px-4 shrink-0 shadow-md z-50">
         <div className="flex items-center gap-6 h-full font-medium">
-          <div className="flex items-center gap-2 font-bold px-3 h-full hover:bg-white/10 transition-colors cursor-pointer">
-            <div className="w-6 h-6 bg-white rounded-sm flex items-center justify-center text-odoo-primary text-[10px] font-black italic">SJ</div>
-            <span className="text-sm">Operaciones</span>
-          </div>
-          {[
-            { id: 'dashboard', label: 'Tablero' },
-            { id: 'ventas', label: 'Auditoría' },
-            { id: 'pedidos', label: 'Suministro' }
-          ].map(tab => (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`px-4 h-full flex items-center transition-colors ${activeTab === tab.id ? 'bg-white/20 font-bold' : 'hover:bg-white/10'}`}>
-              {tab.label}
-            </button>
+          <div className="flex items-center gap-2 font-bold px-3 h-full hover:bg-white/10 transition-colors cursor-pointer"><div className="w-6 h-6 bg-white rounded-sm flex items-center justify-center text-odoo-primary text-[10px] font-black italic">SJ</div><span className="text-sm">Operaciones</span></div>
+          {[{ id: 'dashboard', label: 'Tablero' }, { id: 'ventas', label: 'Auditoría' }, { id: 'pedidos', label: 'Suministro' }].map(tab => (
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`px-4 h-full flex items-center transition-colors ${activeTab === tab.id ? 'bg-white/20 font-bold' : 'hover:bg-white/10'}`}>{tab.label}</button>
           ))}
         </div>
-        <div className="flex items-center gap-4 h-full">
-          <div className="flex items-center gap-2 px-3 h-full border-l border-white/10 text-xs font-bold"><UserIcon size={14}/> {session?.name}</div>
-          <button onClick={() => setView('login')} className="px-4 h-full border-l border-white/10 hover:bg-red-500/20"><LogOut size={14}/></button>
-        </div>
+        <div className="flex items-center gap-4 h-full"><div className="flex items-center gap-2 px-3 h-full border-l border-white/10 text-xs font-bold"><UserIcon size={14}/> {session?.name}</div><button onClick={() => setView('login')} className="px-4 h-full border-l border-white/10 hover:bg-red-500/20"><LogOut size={14}/></button></div>
       </header>
-
-      {/* Contenedor Principal */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Barra Lateral Odoo Apps */}
         <aside className="w-64 bg-white border-r border-gray-200 hidden md:flex flex-col shrink-0">
-          <div className="p-4 border-b bg-gray-50/50">
-            <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2"><Calendar size={14} className="text-odoo-primary"/> Filtro Global</h3>
-            <div className="mt-4 space-y-3">
-               <input type="date" value={dateRange.start} onChange={e => setDateRange({...dateRange, start: e.target.value})} className="w-full p-2 text-xs border rounded font-medium outline-none focus:border-odoo-primary"/>
-               <button onClick={fetchData} className="w-full p-2 bg-odoo-primary text-white rounded text-[10px] font-black uppercase tracking-widest shadow-sm">Actualizar Todo</button>
-            </div>
+          <div className="p-4 border-b bg-gray-50/50"><h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2"><Calendar size={14} className="text-odoo-primary"/> Filtro Global</h3>
+            <div className="mt-4 space-y-3"><input type="date" value={dateRange.start} onChange={e => setDateRange({...dateRange, start: e.target.value})} className="w-full p-2 text-xs border rounded font-medium outline-none focus:border-odoo-primary"/><button onClick={fetchData} className="w-full p-2 bg-odoo-primary text-white rounded text-[10px] font-black uppercase tracking-widest shadow-sm">Actualizar Sincronización</button></div>
           </div>
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
              {activeTab === 'pedidos' && myOrders.length > 0 && (
-               <div className="animate-in slide-in-from-left duration-300">
-                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4">Transferencias Recientes</p>
-                  {myOrders.map(o => (
-                    <div key={o.id} className="text-[10px] border-b border-gray-100 pb-3 mb-3 last:border-0">
-                       <div className="flex justify-between font-bold mb-1"><span>{o.name}</span><span className={`px-1.5 rounded-full ${o.state === 'done' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{o.state}</span></div>
-                       <p className="text-gray-400 truncate">{o.location_dest_id[1]}</p>
-                    </div>
-                  ))}
+               <div className="animate-in slide-in-from-left duration-300"><p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4">Transferencias Recientes</p>
+                  {myOrders.map(o => (<div key={o.id} className="text-[10px] border-b border-gray-100 pb-3 mb-3 last:border-0"><div className="flex justify-between font-bold mb-1"><span>{o.name}</span><span className={`px-1.5 rounded-full ${o.state === 'done' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{o.state}</span></div><p className="text-gray-400 truncate">{o.location_dest_id[1]}</p></div>))}
                </div>
              )}
           </div>
         </aside>
-
-        {/* Zona de Renderizado */}
         <main className="flex-1 overflow-y-auto p-8 custom-scrollbar">
           {activeTab === 'dashboard' && <Dashboard posConfigs={posConfigs} posSalesData={posSalesData} lastSync={lastSync} />}
           {activeTab === 'ventas' && <AuditModule posConfigs={posConfigs} posSalesData={posSalesData} onSelect={setSelectedPos} selectedPos={selectedPos} onCloseDetail={() => setSelectedPos(null)} />}
-          {activeTab === 'pedidos' && (
-            <OrderModule 
-              productSearch={productSearch} setProductSearch={setProductSearch} onSearch={handleProductSearch}
-              products={products} cart={cart} setCart={setCart} warehouses={warehouses}
-              targetWarehouseId={targetWarehouseId} setTargetWarehouseId={setTargetWarehouseId}
-              onSubmitOrder={createWarehouseOrder} loading={loading}
-            />
-          )}
+          {activeTab === 'pedidos' && (<OrderModule productSearch={productSearch} setProductSearch={setProductSearch} onSearch={handleProductSearch} products={products} cart={cart} setCart={setCart} warehouses={warehouses} targetWarehouseId={targetWarehouseId} setTargetWarehouseId={setTargetWarehouseId} onSubmitOrder={createWarehouseOrder} loading={loading} />)}
         </main>
       </div>
-
-      {/* Indicador de Carga */}
-      {loading && (
-        <div className="fixed bottom-6 right-6 z-[200] bg-white px-6 py-4 rounded shadow-2xl border flex items-center gap-4 animate-in slide-in-from-right">
-          <Loader2 className="animate-spin text-odoo-primary" size={20}/>
-          <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Conectando con SJS-DB...</span>
-        </div>
-      )}
+      {loading && (<div className="fixed bottom-6 right-6 z-[200] bg-white px-6 py-4 rounded shadow-2xl border flex items-center gap-4 animate-in slide-in-from-right"><Loader2 className="animate-spin text-odoo-primary" size={20}/><span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Sincronizando con Odoo Real-Time...</span></div>)}
     </div>
   );
 };

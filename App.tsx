@@ -69,15 +69,40 @@ const App: React.FC = () => {
     if (view !== 'app') return;
     setLoading(true);
     try {
-      const configs = await client.searchRead('pos.config', [], ['name', 'id', 'current_session_id', 'current_session_state']);
-      const filteredConfigs = configs.filter((c: any) => c.name.toUpperCase().includes('BOTICA') && !c.name.toUpperCase().includes('CRUZ'));
+      // 1. Obtener el ID de la compañía San José para filtrar todo por este ID
+      const companies = await client.searchRead('res.company', [['name', '=', config.companyName]], ['id']);
+      if (!companies.length) throw new Error("No se encontró la configuración de la compañía San José.");
+      const sanJoseId = companies[0].id;
+
+      // 2. Definir lista de exclusión (Blacklist)
+      const blacklist = ['CRUZ', 'CHALPON', 'INDACOCHEA', 'AMAY', 'P&P', 'P & P'];
+
+      // 3. Obtener POS Configs filtrados por compañía y excluyendo blacklist
+      const configs = await client.searchRead('pos.config', 
+        [['company_id', '=', sanJoseId]], 
+        ['name', 'id', 'current_session_id', 'current_session_state', 'company_id']
+      );
+      const filteredConfigs = configs.filter((c: any) => 
+        !blacklist.some(term => c.name.toUpperCase().includes(term))
+      );
       setPosConfigs(filteredConfigs);
 
-      // Ahora traemos también el company_id de los almacenes para evitar errores de incompatibilidad
-      const ws = await client.searchRead('stock.warehouse', [], ['name', 'id', 'lot_stock_id', 'company_id']);
-      setWarehouses(ws);
+      // 4. Obtener Almacenes filtrados por compañía y excluyendo blacklist
+      const ws = await client.searchRead('stock.warehouse', 
+        [['company_id', '=', sanJoseId]], 
+        ['name', 'id', 'lot_stock_id', 'company_id']
+      );
+      const filteredWarehouses = ws.filter((w: any) => 
+        !blacklist.some(term => w.name.toUpperCase().includes(term))
+      );
+      setWarehouses(filteredWarehouses);
 
-      const sessionDomain = [['config_id', 'in', filteredConfigs.map(c => c.id)], ['start_at', '>=', `${dateRange.start} 00:00:00`], ['start_at', '<=', `${dateRange.end} 23:59:59`]];
+      // 5. Obtener sesiones de las cajas filtradas
+      const sessionDomain = [
+        ['config_id', 'in', filteredConfigs.map(c => c.id)], 
+        ['start_at', '>=', `${dateRange.start} 00:00:00`], 
+        ['start_at', '<=', `${dateRange.end} 23:59:59`]
+      ];
       const sessions = await client.searchRead('pos.session', sessionDomain, ['id', 'config_id', 'user_id', 'start_at', 'state', 'cash_register_balance_end_real'], { order: 'start_at desc' });
 
       const stats: any = {};
@@ -94,9 +119,12 @@ const App: React.FC = () => {
       setPosSalesData(stats);
       setLastSync(new Date().toLocaleTimeString('es-PE'));
       fetchMyOrders();
-    } catch (e) { setErrorLog("Fallo al conectar con el servidor RPC de Odoo."); }
+    } catch (e: any) { 
+      console.error(e);
+      setErrorLog(e.message || "Fallo al conectar con el servidor RPC de Odoo."); 
+    }
     finally { setLoading(false); }
-  }, [client, view, dateRange, fetchMyOrders]);
+  }, [client, view, dateRange, config.companyName, fetchMyOrders]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -127,19 +155,20 @@ const App: React.FC = () => {
       const mainWarehouse = warehouses.find(w => w.name.toUpperCase().includes('PRINCIPAL1'));
       const targetWarehouse = warehouses.find(w => w.id === targetWarehouseId);
       
-      if (!mainWarehouse) throw new Error("No se pudo localizar el Almacén Principal 1.");
+      if (!mainWarehouse) throw new Error("No se pudo localizar el Almacén Principal 1 de San José.");
 
       const pickingTypes = await client.searchRead('stock.picking.type', [['code', '=', 'internal'], ['warehouse_id', '=', mainWarehouse.id]], ['id']);
-      if (!pickingTypes.length) throw new Error("Operación interna no configurada en Odoo para este almacén.");
+      if (!pickingTypes.length) throw new Error("Operación interna no configurada para el Almacén Principal 1.");
 
-      // SOLUCIÓN AL ERROR DE EMPRESA: Forzamos el company_id al del almacén de origen (San José)
+      // SOLUCIÓN DEFINITIVA MULTI-COMPAÑÍA:
+      // Forzamos company_id al ID de San José obtenido del almacén de origen
       const pickingId = await client.create('stock.picking', {
         picking_type_id: pickingTypes[0].id,
         location_id: mainWarehouse.lot_stock_id[0],
         location_dest_id: targetWarehouse.lot_stock_id[0],
         origin: `PEDIDO APP - ${session.name}`,
         move_type: 'direct',
-        company_id: mainWarehouse.company_id[0], // <--- KEY FIX: Asegura compatibilidad legal
+        company_id: mainWarehouse.company_id[0], 
         user_id: (client as any).uid
       });
 
@@ -150,7 +179,7 @@ const App: React.FC = () => {
           product_uom_qty: item.qty,
           product_uom: item.uom_id[0],
           picking_id: pickingId,
-          company_id: mainWarehouse.company_id[0], // <--- KEY FIX: Los movimientos también deben ser de la misma empresa
+          company_id: mainWarehouse.company_id[0], 
           location_id: mainWarehouse.lot_stock_id[0],
           location_dest_id: targetWarehouse.lot_stock_id[0],
         });
@@ -161,12 +190,12 @@ const App: React.FC = () => {
         'stock.picking', 'action_confirm', [[pickingId]]
       ]);
 
-      alert("¡Transferencia creada exitosamente en Odoo bajo la compañía correcta!");
+      alert("¡Transferencia creada exitosamente en Odoo (Compañía San José)!");
       setCart([]);
       fetchMyOrders();
       setActiveTab('pedidos');
     } catch (e: any) {
-      alert("Error Crítico de Odoo: " + e.message);
+      alert("Error Odoo: " + e.message);
     } finally { setLoading(false); }
   };
 

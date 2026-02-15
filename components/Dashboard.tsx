@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Activity, Calendar, Wallet, Store, ShieldCheck, TrendingUp } from 'lucide-react';
+import { Activity, Calendar, Wallet, Store, ShieldCheck, TrendingUp, DollarSign, PiggyBank } from 'lucide-react';
 import { OdooStatCard } from './StatCard';
 
 interface DashboardProps {
@@ -11,64 +11,109 @@ interface DashboardProps {
 
 export const Dashboard: React.FC<DashboardProps> = ({ posConfigs, posSalesData, lastSync }) => {
   const totalSales = Number(Object.values(posSalesData).reduce((a: any, b: any) => a + (b.totalSales || 0), 0));
+  const totalMargin = Number(Object.values(posSalesData).reduce((a: any, b: any) => a + (b.margin || 0), 0));
   const totalSessions = Object.values(posSalesData).reduce((a: any, b: any) => a + (b.count || 0), 0);
+  
+  const marginPercent = totalSales > 0 ? (totalMargin / totalSales) * 100 : 0;
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6 animate-in fade-in duration-300">
-      <div className="flex flex-wrap gap-4">
-        <OdooStatCard title="Venta Total (Real-Time)" value={`S/ ${totalSales.toLocaleString('es-PE', {minimumFractionDigits: 2})}`} icon={TrendingUp} active />
-        <OdooStatCard title="Boticas San José" value={posConfigs.length} icon={Store} />
-        <OdooStatCard title="Sesiones Sincronizadas" value={totalSessions} icon={Calendar} />
+    <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <OdooStatCard title="Venta Bruta" value={`S/ ${totalSales.toLocaleString('es-PE')}`} icon={TrendingUp} active />
+        <OdooStatCard title="Utilidad Bruta" value={`S/ ${totalMargin.toLocaleString('es-PE')}`} icon={PiggyBank} />
+        <OdooStatCard title="Margen de Ganancia" value={`${marginPercent.toFixed(1)}%`} icon={DollarSign} />
+        <OdooStatCard title="Turnos Activos" value={totalSessions} icon={Calendar} />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
-          <div className="p-4 bg-gray-50 border-b flex justify-between items-center">
-            <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2">
-              <Activity size={16} className="text-odoo-primary"/> Monitoreo de Sesiones Odoo
-            </h3>
-            <span className="text-[10px] font-bold text-gray-400">Sync: {lastSync}</span>
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        {/* Lista de Boticas */}
+        <div className="lg:col-span-7 bg-white border border-gray-200 rounded-sm shadow-sm overflow-hidden flex flex-col">
+          <div className="p-6 bg-gray-50 border-b flex justify-between items-center">
+             <div className="space-y-1">
+               <h3 className="text-sm font-black text-gray-800 flex items-center gap-3 uppercase tracking-wider">
+                 <Activity size={18} className="text-odoo-primary"/> Monitor Operativo SJS
+               </h3>
+               <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Sincronización de cajas del día</p>
+             </div>
+             <div className="text-right">
+                <span className="text-[10px] font-black text-odoo-primary bg-odoo-primary/5 px-3 py-1.5 rounded uppercase tracking-widest border border-odoo-primary/10">Sync: {lastSync}</span>
+             </div>
           </div>
-          <div className="divide-y divide-gray-100 max-h-[400px] overflow-y-auto custom-scrollbar">
-            {posConfigs.map(c => (
-              <div key={c.id} className="p-4 flex items-center justify-between hover:bg-gray-50 transition-colors group">
-                <div className="flex items-center gap-3">
-                  <div className={`w-2.5 h-2.5 rounded-full ${posSalesData[c.id]?.isOnline ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)] animate-pulse' : 'bg-gray-300'}`}></div>
-                  <div>
-                    <p className="text-xs font-bold text-gray-700 uppercase group-hover:text-odoo-primary transition-colors">{c.name}</p>
-                    <p className="text-[10px] text-gray-400">{posSalesData[c.id]?.sessions?.length || 0} turnos hoy</p>
+          <div className="divide-y divide-gray-100 max-h-[500px] overflow-y-auto custom-scrollbar bg-white">
+            {posConfigs.map(c => {
+              const data = posSalesData[c.id];
+              return (
+                <div key={c.id} className="p-6 flex items-center justify-between hover:bg-gray-50 transition-all group">
+                  <div className="flex items-center gap-5">
+                    <div className={`w-3 h-3 rounded-full shadow-sm ${data?.isOnline ? 'bg-green-500 animate-pulse ring-4 ring-green-100' : 'bg-gray-300'}`}></div>
+                    <div>
+                      <p className="text-[13px] font-black text-gray-800 uppercase group-hover:text-odoo-primary transition-colors tracking-tight">{c.name}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <p className="text-[9px] text-gray-400 font-black uppercase tracking-widest">{data?.sessions?.length || 0} Sesiones</p>
+                        <span className="w-1 h-1 rounded-full bg-gray-300"></span>
+                        <p className={`text-[9px] font-black uppercase tracking-widest ${data?.isOnline ? 'text-green-600' : 'text-gray-400'}`}>
+                          {data?.rawState?.replace('_', ' ') || 'SIN ACTIVIDAD'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-right space-y-1">
+                    <p className="text-base font-black text-gray-800">S/ {(data?.totalSales || 0).toLocaleString('es-PE', {minimumFractionDigits: 2})}</p>
+                    <p className="text-[10px] font-black text-green-600 uppercase tracking-widest">
+                       +{((data?.margin / (data?.totalSales || 1)) * 100).toFixed(1)}% RENTAB.
+                    </p>
                   </div>
                 </div>
-                <div className="text-right">
-                  <p className="text-sm font-black text-gray-800">S/ {(posSalesData[c.id]?.totalSales || 0).toLocaleString('es-PE', {minimumFractionDigits: 2})}</p>
-                  <p className={`text-[9px] font-bold ${posSalesData[c.id]?.isOnline ? 'text-green-600' : 'text-gray-400'}`}>
-                    {posSalesData[c.id]?.isOnline ? 'VENTAS ACTIVAS' : 'CERRADO'}
-                  </p>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
-        <div className="bg-white border border-gray-200 rounded shadow-sm p-8 flex flex-col items-center justify-center text-center space-y-4">
-          <div className="w-16 h-16 bg-odoo-primary/5 rounded-full flex items-center justify-center text-odoo-primary">
-            <ShieldCheck size={32} />
-          </div>
-          <h3 className="font-bold text-gray-800 uppercase tracking-tight">Certificación de Datos SJS</h3>
-          <p className="text-xs text-gray-500 max-w-xs leading-relaxed">
-            Sincronización directa mediante RPC Odoo v18. Se capturan todas las transacciones de terminales POS activas de Cadena de Boticas San José.
-          </p>
-          <div className="pt-4 flex gap-4">
-            <div className="text-center">
-               <p className="text-[10px] font-bold text-gray-400">DATABASE</p>
-               <p className="text-xs font-black text-odoo-primary">san_jose_main</p>
-            </div>
-            <div className="w-px h-8 bg-gray-200"></div>
-            <div className="text-center">
-               <p className="text-[10px] font-bold text-gray-400">CONEXIÓN</p>
-               <p className="text-xs font-black text-green-600">CIFRADA SSL</p>
-            </div>
-          </div>
+        {/* Certificación y Stats */}
+        <div className="lg:col-span-5 space-y-8">
+           <div className="bg-odoo-primary p-8 rounded-sm text-white shadow-xl relative overflow-hidden group">
+              <div className="relative z-10 space-y-6">
+                 <ShieldCheck size={50} className="text-white/30 group-hover:scale-110 transition-transform"/>
+                 <div className="space-y-2">
+                    <h3 className="text-xl font-black uppercase tracking-tighter">Integridad de Datos BI</h3>
+                    <p className="text-[11px] text-white/70 font-bold leading-relaxed uppercase tracking-wider">
+                       Cálculo de margen basado en (Venta - Costo Odoo). Reportes certificados para auditoría fiscal y operativa.
+                    </p>
+                 </div>
+                 <div className="flex gap-4 pt-4">
+                    <div className="bg-white/10 px-4 py-3 rounded-sm backdrop-blur-md flex-1 text-center border border-white/5">
+                       <p className="text-[9px] font-black text-white/50 uppercase mb-1">Empresa</p>
+                       <p className="text-[11px] font-black">SAN JOSE SAC</p>
+                    </div>
+                    <div className="bg-white/10 px-4 py-3 rounded-sm backdrop-blur-md flex-1 text-center border border-white/5">
+                       <p className="text-[9px] font-black text-white/50 uppercase mb-1">Motor</p>
+                       <p className="text-[11px] font-black">ODOO V18 RPC</p>
+                    </div>
+                 </div>
+              </div>
+              <div className="absolute -bottom-10 -right-10 w-48 h-48 bg-white/5 rounded-full blur-3xl group-hover:bg-white/10 transition-all"></div>
+           </div>
+
+           <div className="bg-white border border-gray-200 rounded-sm p-8 shadow-sm space-y-6">
+              <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-[0.2em] border-b pb-4">Eficiencia Financiera</h4>
+              <div className="space-y-6">
+                 <div>
+                    <div className="flex justify-between items-center mb-2">
+                       <span className="text-[10px] font-black text-gray-500 uppercase">Margen de Operación</span>
+                       <span className="text-sm font-black text-odoo-primary">{marginPercent.toFixed(1)}%</span>
+                    </div>
+                    <div className="w-full bg-gray-100 h-2.5 rounded-full overflow-hidden">
+                       <div className="bg-odoo-primary h-full transition-all duration-1000" style={{ width: `${marginPercent}%` }}></div>
+                    </div>
+                 </div>
+                 <div className="flex items-start gap-4 p-4 bg-amber-50 rounded-sm border border-amber-100">
+                    <Activity size={20} className="text-amber-500 shrink-0"/>
+                    <p className="text-[10px] text-amber-700 font-bold leading-relaxed">
+                       Atención: Los márgenes menores al 15% requieren revisión de precios o negociación con proveedores de laboratorio.
+                    </p>
+                 </div>
+              </div>
+           </div>
         </div>
       </div>
     </div>

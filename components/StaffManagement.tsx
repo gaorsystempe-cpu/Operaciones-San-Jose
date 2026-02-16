@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Users, Calendar, MapPin, Clock, Plus, 
   Mail, X, RefreshCw, Coffee,
-  CalendarDays, Check, Info
+  CalendarDays, Check, Info, AlertCircle, Zap
 } from 'lucide-react';
 import { Employee, PosConfig, Shift } from '../types';
 import { shiftService } from '../services/supabaseService';
@@ -17,13 +17,13 @@ interface StaffManagementProps {
 }
 
 const DAYS_OF_WEEK = [
-  { label: 'Lun', value: 1 },
-  { label: 'Mar', value: 2 },
-  { label: 'Mié', value: 3 },
-  { label: 'Jue', value: 4 },
-  { label: 'Vie', value: 5 },
-  { label: 'Sáb', value: 6 },
-  { label: 'Dom', value: 0 },
+  { label: 'Lunes', value: 1, short: 'Lun' },
+  { label: 'Martes', value: 2, short: 'Mar' },
+  { label: 'Miércoles', value: 3, short: 'Mié' },
+  { label: 'Jueves', value: 4, short: 'Jue' },
+  { label: 'Viernes', value: 5, short: 'Vie' },
+  { label: 'Sábado', value: 6, short: 'Sáb' },
+  { label: 'Domingo', value: 0, short: 'Dom' },
 ];
 
 export const StaffManagement: React.FC<StaffManagementProps> = ({ 
@@ -87,7 +87,7 @@ export const StaffManagement: React.FC<StaffManagementProps> = ({
         employee_name: emp?.name || 'Desconocido',
         employee_email: emp?.work_email || '',
         pos_id: isRestDay ? 0 : posId,
-        pos_name: isRestDay ? 'LIBRE' : (pos?.name || 'Sin Sede'),
+        pos_name: isRestDay ? 'LIBRE (DESCANSO)' : (pos?.name || 'Sin Sede'),
         date: d.toISOString().split('T')[0],
         shift_type: currentShiftType,
         start_time: isRestDay ? '00:00' : formData.get('start'),
@@ -122,38 +122,54 @@ export const StaffManagement: React.FC<StaffManagementProps> = ({
   };
 
   return (
-    <div className="max-w-[1400px] mx-auto space-y-6 animate-fade pb-20">
-      {/* Header Panel */}
-      <div className="bg-white/90 backdrop-blur-sm p-4 border border-slate-200 rounded-3xl shadow-sm flex flex-col md:flex-row justify-between items-center gap-4 sticky top-0 z-[40]">
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-odoo-primary text-white rounded-xl">
-            <CalendarDays size={18}/>
+    <div className="max-w-[1400px] mx-auto space-y-6 animate-fade pb-24">
+      {/* Header Panel Superior */}
+      <div className="bg-white/95 backdrop-blur-md p-6 border border-slate-200 rounded-[32px] shadow-sm flex flex-col md:flex-row justify-between items-center gap-6 sticky top-0 z-[40]">
+        <div className="flex items-center gap-4">
+          <div className="p-3 bg-odoo-primary text-white rounded-2xl shadow-lg shadow-odoo-primary/20">
+            <CalendarDays size={24}/>
           </div>
           <div>
-            <h2 className="text-base font-black text-slate-800 uppercase tracking-tight leading-none">Gestión Horaria</h2>
-            <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mt-1">Control de Turnos y Descansos</p>
+            <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight leading-none">Control de Horarios</h2>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1.5 flex items-center gap-2">
+               {dbLoading && <RefreshCw size={12} className="animate-spin text-odoo-primary"/>}
+               Programación Mensual y Gestión de Descansos
+            </p>
           </div>
         </div>
 
-        <div className="flex bg-slate-100 p-1 rounded-xl">
-          <button onClick={() => setActiveView('schedule')} className={`px-4 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${activeView === 'schedule' ? 'bg-white text-odoo-primary shadow-sm' : 'text-slate-400'}`}>Cronograma</button>
-          <button onClick={() => setActiveView('roster')} className={`px-4 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${activeView === 'roster' ? 'bg-white text-odoo-primary shadow-sm' : 'text-slate-400'}`}>Colaboradores</button>
+        <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200">
+          <button 
+            onClick={() => setActiveView('schedule')} 
+            className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeView === 'schedule' ? 'bg-white text-odoo-primary shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+          >
+            Cronograma Operativo
+          </button>
+          <button 
+            onClick={() => setActiveView('roster')} 
+            className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeView === 'roster' ? 'bg-white text-odoo-primary shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+          >
+            Nómina de Personal
+          </button>
         </div>
       </div>
 
       {activeView === 'roster' && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 animate-fade">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 animate-fade">
           {employees.map(emp => (
-            <div key={emp.id} className="bg-white border border-slate-200 rounded-3xl p-5 hover:border-odoo-primary/30 transition-all group shadow-sm">
+            <div key={emp.id} className="bg-white border border-slate-200 rounded-[32px] p-6 hover:border-odoo-primary/30 transition-all group shadow-sm hover:shadow-xl hover:shadow-slate-200/50 relative overflow-hidden">
               <div className="flex flex-col items-center">
-                <div className="w-12 h-12 bg-slate-50 rounded-xl flex items-center justify-center text-odoo-primary font-black text-lg border border-slate-100 mb-3">
+                <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center text-odoo-primary font-black text-2xl border border-slate-100 mb-4 group-hover:scale-110 transition-transform">
                    {emp.name.charAt(0)}
                 </div>
-                <h3 className="text-[11px] font-black text-slate-800 uppercase text-center line-clamp-1">{emp.name}</h3>
-                <p className="text-[8px] font-bold text-odoo-primary uppercase opacity-60 tracking-tighter">{emp.job_title || 'Colaborador SJS'}</p>
+                <h3 className="text-xs font-black text-slate-800 uppercase text-center line-clamp-1">{emp.name}</h3>
+                <p className="text-[9px] font-bold text-odoo-primary uppercase mt-1.5 opacity-60 tracking-tighter">{emp.job_title || 'Colaborador SJS'}</p>
                 {isAdmin && (
-                  <button onClick={() => { setSelectedEmployee(emp); setShowAddShift(true); }} className="w-full mt-4 bg-slate-900 text-white py-2.5 rounded-xl text-[8px] font-black uppercase tracking-widest hover:bg-odoo-primary transition-all">
-                    Asignar Mensual
+                  <button 
+                    onClick={() => { setSelectedEmployee(emp); setShowAddShift(true); }} 
+                    className="w-full mt-6 bg-slate-900 text-white py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-odoo-primary transition-all flex items-center justify-center gap-2"
+                  >
+                    <Plus size={16}/> Programar Mes
                   </button>
                 )}
               </div>
@@ -163,54 +179,69 @@ export const StaffManagement: React.FC<StaffManagementProps> = ({
       )}
 
       {activeView === 'schedule' && (
-        <div className="bg-white border border-slate-200 rounded-[32px] overflow-hidden shadow-sm">
-          <div className="px-6 py-4 border-b bg-slate-50/50 flex justify-between items-center">
-             <h3 className="text-[9px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2"><Clock size={14}/> Cronograma de Operaciones</h3>
+        <div className="bg-white border border-slate-200 rounded-[40px] overflow-hidden shadow-xl shadow-slate-200/40 animate-fade">
+          <div className="px-8 py-6 border-b bg-slate-50/50 flex justify-between items-center">
+             <div className="flex items-center gap-3">
+                <Clock size={20} className="text-odoo-primary"/>
+                <h3 className="text-[11px] font-black text-slate-600 uppercase tracking-[0.2em]">Registro de Actividad y Jornadas</h3>
+             </div>
              {isAdmin && (
-               <button onClick={() => { setSelectedEmployee(null); setShowAddShift(true); }} className="bg-odoo-primary text-white py-2.5 px-5 rounded-xl text-[9px] font-black uppercase flex items-center gap-2 shadow-md hover:scale-[1.02] transition-transform">
-                 <Plus size={14}/> Programar Rango
+               <button 
+                onClick={() => { setSelectedEmployee(null); setShowAddShift(true); }} 
+                className="bg-odoo-primary text-white py-3.5 px-6 rounded-2xl text-[10px] font-black uppercase flex items-center gap-2 shadow-lg shadow-odoo-primary/20 hover:scale-[1.02] transition-all active:scale-95"
+               >
+                 <Plus size={18}/> Nueva Programación Masiva
                </button>
              )}
           </div>
-          <div className="overflow-x-auto custom-scrollbar max-h-[600px]">
+          <div className="overflow-x-auto custom-scrollbar max-h-[650px]">
              <table className="w-full text-left">
-               <thead className="bg-slate-50 text-[9px] font-black text-slate-400 uppercase border-b sticky top-0 z-10">
+               <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase border-b sticky top-0 z-10 backdrop-blur-md">
                  <tr>
-                   <th className="px-6 py-3">Colaborador</th>
-                   <th className="px-6 py-3">Punto de Venta</th>
-                   <th className="px-6 py-3">Fecha</th>
-                   <th className="px-6 py-3">Horario</th>
-                   <th className="px-6 py-3">Tipo</th>
-                   <th className="px-6 py-3 text-right"></th>
+                   <th className="px-8 py-5">Colaborador</th>
+                   <th className="px-8 py-5">Punto de Venta / Destino</th>
+                   <th className="px-8 py-5">Fecha Programada</th>
+                   <th className="px-8 py-5">Rango de Hora</th>
+                   <th className="px-8 py-5">Tipo Jornada</th>
+                   <th className="px-8 py-5 text-right">Acciones</th>
                  </tr>
                </thead>
-               <tbody className="divide-y divide-slate-50">
+               <tbody className="divide-y divide-slate-100">
                  {shifts.map(shift => (
-                   <tr key={shift.id} className={`hover:bg-slate-50/80 transition-colors group ${shift.shift_type === 'descanso' ? 'bg-slate-50/30' : ''}`}>
-                     <td className="px-6 py-3">
-                       <span className="text-[11px] font-bold text-slate-700 uppercase">{shift.employee_name}</span>
+                   <tr key={shift.id} className={`hover:bg-slate-50/80 transition-colors group ${shift.shift_type === 'descanso' ? 'bg-slate-50/40 italic' : ''}`}>
+                     <td className="px-8 py-5">
+                       <div className="flex items-center gap-3">
+                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-black ${shift.shift_type === 'descanso' ? 'bg-slate-200 text-slate-400' : 'bg-odoo-primary/10 text-odoo-primary'}`}>
+                             {shift.employee_name.charAt(0)}
+                          </div>
+                          <span className="text-xs font-bold text-slate-700 uppercase">{shift.employee_name}</span>
+                       </div>
                      </td>
-                     <td className="px-6 py-3">
-                       <span className={`text-[9px] font-black uppercase ${shift.shift_type === 'descanso' ? 'text-slate-300 italic' : 'text-slate-500'}`}>{shift.pos_name}</span>
+                     <td className="px-8 py-5">
+                       <div className="flex items-center gap-2">
+                          <MapPin size={12} className={shift.shift_type === 'descanso' ? 'text-slate-300' : 'text-odoo-primary/40'}/>
+                          <span className={`text-[10px] font-black uppercase ${shift.shift_type === 'descanso' ? 'text-slate-300' : 'text-slate-500'}`}>{shift.pos_name}</span>
+                       </div>
                      </td>
-                     <td className="px-6 py-3">
-                       <span className="text-[11px] font-bold text-slate-600 uppercase">
+                     <td className="px-8 py-5">
+                       <span className="text-xs font-bold text-slate-600 uppercase">
                           {new Date(shift.date + 'T00:00:00').toLocaleDateString('es-PE', {weekday: 'short', day: '2-digit', month: 'short'})}
                        </span>
                      </td>
-                     <td className="px-6 py-3">
+                     <td className="px-8 py-5">
                         {shift.shift_type === 'descanso' ? (
-                          <div className="flex items-center gap-1.5 text-slate-300">
-                             <Coffee size={12}/> <span className="text-[9px] font-black uppercase">Libre</span>
+                          <div className="flex items-center gap-2 text-slate-300">
+                             <Coffee size={14}/> <span className="text-[10px] font-black uppercase tracking-widest">Libre</span>
                           </div>
                         ) : (
-                          <span className="text-[10px] font-black text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200/50">
-                            {shift.start_time.slice(0,5)} - {shift.end_time.slice(0,5)}
-                          </span>
+                          <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-xl border border-slate-200/50">
+                             <Clock size={12} className="text-slate-400"/>
+                             <span className="text-[10px] font-black text-slate-600 tracking-tighter">{shift.start_time.slice(0,5)} — {shift.end_time.slice(0,5)}</span>
+                          </div>
                         )}
                      </td>
-                     <td className="px-6 py-3">
-                       <span className={`text-[8px] font-black px-2 py-1 rounded-full uppercase ${
+                     <td className="px-8 py-5">
+                       <span className={`text-[8px] font-black px-3 py-1.5 rounded-full uppercase tracking-tighter shadow-sm ${
                          shift.shift_type === 'mañana' ? 'bg-amber-100 text-amber-600' :
                          shift.shift_type === 'tarde' ? 'bg-indigo-100 text-indigo-600' :
                          shift.shift_type === 'noche' ? 'bg-slate-800 text-white' : 
@@ -219,124 +250,195 @@ export const StaffManagement: React.FC<StaffManagementProps> = ({
                          {shift.shift_type}
                        </span>
                      </td>
-                     <td className="px-6 py-3 text-right">
+                     <td className="px-8 py-5 text-right">
                        {isAdmin && (
-                         <button onClick={() => deleteShift(shift.id)} className="p-1.5 text-slate-200 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100">
-                            <X size={14}/>
+                         <button onClick={() => deleteShift(shift.id)} className="p-2 text-slate-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100 bg-white shadow-sm border border-slate-100 rounded-xl">
+                            <X size={16}/>
                          </button>
                        )}
                      </td>
                    </tr>
                  ))}
+                 {shifts.length === 0 && !dbLoading && (
+                   <tr>
+                     <td colSpan={6} className="py-24 text-center">
+                        <Calendar size={48} className="mx-auto text-slate-100 mb-4"/>
+                        <p className="text-xs font-black text-slate-300 uppercase tracking-[0.3em]">No hay actividad registrada</p>
+                     </td>
+                   </tr>
+                 )}
                </tbody>
              </table>
           </div>
         </div>
       )}
 
-      {/* Modal Programación - Optimizado para visibilidad completa */}
+      {/* MODAL REDISEÑADO: "Ficha de Programación Profesional" */}
       {showAddShift && (
-        <div className="fixed inset-0 z-[300] flex items-start justify-center p-2 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
-           <form onSubmit={handleAddShiftRange} className="relative w-full max-w-2xl bg-white rounded-[32px] shadow-2xl overflow-hidden animate-fade my-auto border border-white flex flex-col max-h-[95vh]">
-              <div className="px-6 py-4 bg-slate-50 border-b flex justify-between items-center shrink-0">
-                 <div>
-                   <h3 className="text-base font-black uppercase text-slate-800 tracking-tight leading-none">Programación Inteligente</h3>
-                   <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">Configuración de Rango y Descansos</p>
+        <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md overflow-y-auto overflow-x-hidden">
+           <form 
+            onSubmit={handleAddShiftRange} 
+            className="relative w-full max-w-4xl bg-white rounded-[48px] shadow-2xl overflow-hidden animate-fade border border-white flex flex-col max-h-[92vh]"
+           >
+              {/* Header Modal */}
+              <div className="px-10 py-8 bg-slate-50 border-b flex justify-between items-center shrink-0">
+                 <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-odoo-primary rounded-2xl flex items-center justify-center text-white shadow-lg shadow-odoo-primary/20">
+                      <Plus size={24}/>
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-black uppercase text-slate-800 tracking-tight leading-none">Nueva Programación de Rango</h3>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1.5 flex items-center gap-2">
+                        <Zap size={12} className="text-odoo-primary"/> Generación masiva de turnos y descansos
+                      </p>
+                    </div>
                  </div>
-                 <button type="button" onClick={() => setShowAddShift(false)} className="p-2 text-slate-400 hover:text-red-500"><X size={20}/></button>
+                 <button 
+                  type="button" 
+                  onClick={() => setShowAddShift(false)} 
+                  className="w-12 h-12 flex items-center justify-center bg-white rounded-2xl shadow-sm text-slate-400 hover:text-red-500 transition-all border border-slate-100 hover:scale-110 active:scale-95"
+                 >
+                    <X size={24}/>
+                 </button>
               </div>
               
-              <div className="p-6 overflow-y-auto custom-scrollbar flex-1 space-y-6">
-                 {/* Sector 1: Colaborador y Período */}
-                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                       <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Colaborador</label>
-                       <select name="employee_id" defaultValue={selectedEmployee?.id} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-[11px] font-bold text-slate-700 outline-none">
-                          {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-                       </select>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                       <div className="space-y-1.5">
-                          <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Fecha Inicio</label>
-                          <input type="date" name="start_date" required className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-[11px] font-bold text-slate-700" defaultValue={new Date().toISOString().split('T')[0]}/>
-                       </div>
-                       <div className="space-y-1.5">
-                          <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Fecha Fin</label>
-                          <input type="date" name="end_date" required className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-[11px] font-bold text-slate-700" defaultValue={new Date().toISOString().split('T')[0]}/>
-                       </div>
-                    </div>
-                 </div>
-
-                 {/* Sector 2: Turno de Trabajo */}
-                 <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-4">
-                    <div className="flex flex-col md:flex-row gap-4">
-                       <div className="flex-1 space-y-1.5">
-                          <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Turno Base de Trabajo</label>
-                          <select value={shiftType} onChange={(e) => setShiftType(e.target.value as any)} className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-[11px] font-black uppercase text-slate-700 outline-none">
-                             <option value="mañana">☀ Mañana</option>
-                             <option value="tarde">🌇 Tarde</option>
-                             <option value="completo">⚡ Completo</option>
-                             <option value="noche">🌙 Noche</option>
+              {/* Body Modal Scrollable */}
+              <div className="p-10 overflow-y-auto custom-scrollbar flex-1 space-y-8 bg-white">
+                 
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                    {/* Columna 1: Datos de Asignación */}
+                    <div className="space-y-6">
+                       <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2 border-b border-slate-50 pb-2">
+                         <Users size={14}/> Identificación y Período
+                       </h4>
+                       
+                       <div className="space-y-2">
+                          <label className="text-[9px] font-black text-slate-500 uppercase ml-2 tracking-widest">Colaborador Odoo</label>
+                          <select name="employee_id" defaultValue={selectedEmployee?.id} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-[12px] font-bold text-slate-700 outline-none focus:ring-4 focus:ring-odoo-primary/5 focus:border-odoo-primary/30 transition-all cursor-pointer">
+                             {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
                           </select>
                        </div>
-                       <div className="flex-1 space-y-1.5">
-                          <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Sede de Trabajo</label>
-                          <select name="pos_id" className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-[11px] font-black uppercase text-slate-700 outline-none">
+
+                       <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                             <label className="text-[9px] font-black text-slate-500 uppercase ml-2 tracking-widest">Fecha Inicio</label>
+                             <input type="date" name="start_date" required className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-[12px] font-bold text-slate-700 focus:ring-4 focus:ring-odoo-primary/5 focus:border-odoo-primary/30 outline-none transition-all" defaultValue={new Date().toISOString().split('T')[0]}/>
+                          </div>
+                          <div className="space-y-2">
+                             <label className="text-[9px] font-black text-slate-500 uppercase ml-2 tracking-widest">Fecha Fin</label>
+                             <input type="date" name="end_date" required className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-[12px] font-bold text-slate-700 focus:ring-4 focus:ring-odoo-primary/5 focus:border-odoo-primary/30 outline-none transition-all" defaultValue={new Date().toISOString().split('T')[0]}/>
+                          </div>
+                       </div>
+
+                       <div className="p-5 bg-blue-50/50 rounded-3xl border border-blue-100 flex gap-4 items-start">
+                          <div className="p-2 bg-blue-100 rounded-xl text-blue-600 mt-1">
+                            <Info size={16}/>
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-[10px] text-blue-800 font-black uppercase tracking-tight">Cálculo de Jornada Inteligente</p>
+                            <p className="text-[9px] text-blue-600 font-bold uppercase leading-relaxed opacity-80">El sistema generará automáticamente registros para cada día del rango, asignando "DESCANSO" a los días marcados en la sección inferior.</p>
+                          </div>
+                       </div>
+                    </div>
+
+                    {/* Columna 2: Detalles del Turno */}
+                    <div className="space-y-6">
+                       <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2 border-b border-slate-50 pb-2">
+                         <Clock size={14}/> Especificación de Jornada
+                       </h4>
+
+                       <div className="space-y-2">
+                          <label className="text-[9px] font-black text-slate-500 uppercase ml-2 tracking-widest">Tipo de Turno Base</label>
+                          <select 
+                            value={shiftType} 
+                            onChange={(e) => setShiftType(e.target.value as any)} 
+                            className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-[12px] font-black uppercase text-slate-700 outline-none focus:ring-4 focus:ring-odoo-primary/5 transition-all"
+                          >
+                             <option value="mañana">☀ Turno Mañana</option>
+                             <option value="tarde">🌆 Turno Tarde</option>
+                             <option value="completo">⚡ Jornada Completa</option>
+                             <option value="noche">🌙 Turno Noche</option>
+                          </select>
+                       </div>
+
+                       <div className="space-y-2">
+                          <label className="text-[9px] font-black text-slate-500 uppercase ml-2 tracking-widest">Sede de Trabajo / Botica</label>
+                          <select name="pos_id" className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-[12px] font-bold text-slate-700 outline-none focus:ring-4 focus:ring-odoo-primary/5 transition-all">
                              {posConfigs.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                           </select>
                        </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-2 gap-4">
-                       <div className="space-y-1.5">
-                          <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Entrada</label>
-                          <input type="time" name="start" required className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-[11px] font-bold text-slate-700" defaultValue="08:00"/>
-                       </div>
-                       <div className="space-y-1.5">
-                          <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Salida</label>
-                          <input type="time" name="end" required className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-[11px] font-bold text-slate-700" defaultValue="14:00"/>
+                       
+                       <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                             <label className="text-[9px] font-black text-slate-500 uppercase ml-2 tracking-widest">Hora Entrada</label>
+                             <input type="time" name="start" required className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-[12px] font-bold text-slate-700" defaultValue="08:00"/>
+                          </div>
+                          <div className="space-y-2">
+                             <label className="text-[9px] font-black text-slate-500 uppercase ml-2 tracking-widest">Hora Salida</label>
+                             <input type="time" name="end" required className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-[12px] font-bold text-slate-700" defaultValue="14:00"/>
+                          </div>
                        </div>
                     </div>
                  </div>
 
-                 {/* Sector 3: Días de Descanso Inyectados */}
-                 <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                       <label className="text-[9px] font-black text-slate-500 uppercase ml-1 flex items-center gap-2">
-                         <Coffee size={12}/> Días de Descanso Semanales
+                 {/* Sección 3: Configuración de Descansos Semanales (Ancho Completo) */}
+                 <div className="pt-6 border-t border-slate-100">
+                    <div className="flex items-center justify-between mb-4">
+                       <label className="text-[10px] font-black text-slate-800 uppercase tracking-[0.2em] flex items-center gap-2">
+                         <Coffee size={16} className="text-odoo-primary"/> Días de Descanso Semanal Programados
                        </label>
-                       <span className="text-[8px] font-bold text-slate-400 uppercase">Se marcarán como "LIBRE"</span>
+                       <div className="px-3 py-1 bg-amber-50 rounded-lg border border-amber-100 flex items-center gap-2">
+                          <AlertCircle size={10} className="text-amber-500" />
+                          <span className="text-[8px] font-black text-amber-600 uppercase">Afecta al rango seleccionado arriba</span>
+                       </div>
                     </div>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="grid grid-cols-4 sm:grid-cols-7 gap-3">
                        {DAYS_OF_WEEK.map(day => (
                          <button 
                            key={day.value}
                            type="button"
                            onClick={() => toggleRestDay(day.value)}
-                           className={`flex-1 min-w-[60px] py-2.5 rounded-xl text-[9px] font-black uppercase border transition-all ${
+                           className={`group relative py-4 rounded-2xl text-[10px] font-black uppercase transition-all border flex flex-col items-center gap-1.5 ${
                              restDays.includes(day.value) 
-                             ? 'bg-slate-900 text-white border-slate-900 shadow-md' 
-                             : 'bg-white text-slate-400 border-slate-200 hover:border-slate-300'
+                             ? 'bg-slate-900 text-white border-slate-900 shadow-xl scale-105 z-10' 
+                             : 'bg-slate-50 text-slate-400 border-slate-200 hover:border-slate-300 hover:bg-white'
                            }`}
                          >
-                           {day.label}
+                           {restDays.includes(day.value) && (
+                              <div className="absolute -top-2 -right-2 w-5 h-5 bg-emerald-500 text-white rounded-full flex items-center justify-center border-2 border-white shadow-sm">
+                                <Check size={10} strokeWidth={4}/>
+                              </div>
+                           )}
+                           <span className="opacity-60 text-[8px]">{day.short}</span>
+                           <span>{day.label}</span>
                          </button>
                        ))}
                     </div>
                  </div>
-
-                 <div className="bg-blue-50/50 p-3 rounded-xl border border-blue-100 flex gap-2 items-center">
-                    <Info size={14} className="text-blue-500 shrink-0" />
-                    <p className="text-[9px] text-blue-700 font-bold uppercase leading-tight tracking-tighter">
-                      El sistema generará automáticamente turnos de {shiftType} para los días laborales y turnos de "DESCANSO" para los días seleccionados arriba.
-                    </p>
-                 </div>
               </div>
 
-              <div className="p-6 border-t bg-slate-50 shrink-0">
-                 <button type="submit" disabled={dbLoading} className="w-full bg-odoo-primary text-white py-4 rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] shadow-xl hover:-translate-y-0.5 active:scale-[0.98] transition-all disabled:opacity-50 flex items-center justify-center gap-3">
-                    {dbLoading ? <RefreshCw size={16} className="animate-spin"/> : <><Check size={18}/> Generar Programación Completa</>}
+              {/* Footer Modal Acción */}
+              <div className="px-10 py-8 bg-slate-50 border-t shrink-0">
+                 <button 
+                  type="submit" 
+                  disabled={dbLoading} 
+                  className="w-full bg-odoo-primary text-white py-5 rounded-[28px] font-black uppercase text-[12px] tracking-[0.3em] shadow-2xl shadow-odoo-primary/30 flex items-center justify-center gap-4 hover:translate-y-[-2px] hover:shadow-odoo-primary/40 active:scale-[0.98] transition-all disabled:opacity-50"
+                 >
+                    {dbLoading ? (
+                      <div className="flex items-center gap-3">
+                        <RefreshCw size={20} className="animate-spin"/> 
+                        <span>Procesando Lote de Turnos...</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-3">
+                        <Check size={22}/> 
+                        <span>Confirmar Programación Mensual Completa</span>
+                      </div>
+                    )}
                  </button>
+                 <p className="text-center text-[9px] font-bold text-slate-400 uppercase mt-4 tracking-widest opacity-60">
+                   Al confirmar, se guardarán los registros en el Centro de Operaciones de Boticas San José.
+                 </p>
               </div>
            </form>
         </div>

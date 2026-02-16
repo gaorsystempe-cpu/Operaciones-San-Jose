@@ -80,7 +80,24 @@ const App: React.FC = () => {
       );
       setPosConfigs(filteredConfigs);
 
-      // 2. Cargar Pedidos con sus líneas y pagos
+      // 2. CARGAR ALMACENES (ESTO FALTABA)
+      const ws = await client.searchRead('stock.warehouse', [['company_id', '=', sanJoseId]], ['name', 'id', 'code', 'lot_stock_id']);
+      setWarehouses(ws || []);
+      
+      // Identificar Almacén Principal como Origen
+      const principal = (ws || []).find((w: any) => 
+        w.code === 'PRINCIPAL1' || 
+        w.code === 'PR' || 
+        w.name.toUpperCase().includes('PRINCIPAL') ||
+        w.name.toUpperCase().includes('ALMACEN CENTRAL')
+      );
+      
+      if (principal) {
+        setOriginWarehouseId(principal.id);
+        if (principal.lot_stock_id) setOriginLocationId(principal.lot_stock_id[0]);
+      }
+
+      // 3. Cargar Pedidos con sus líneas y pagos para BI
       const orders = await client.searchRead('pos.order', [
         ['company_id', '=', sanJoseId],
         ['date_order', '>=', `${dateRange.start} 00:00:00`],
@@ -88,34 +105,23 @@ const App: React.FC = () => {
         ['state', 'in', ['paid', 'done', 'invoiced']]
       ], ['id', 'amount_total', 'config_id', 'session_id', 'lines', 'payment_ids']) || [];
 
-      // Extraer IDs para búsquedas masivas de detalles
       const orderIds = orders.map(o => o.id);
-      
       let allLines: any[] = [];
       let allPayments: any[] = [];
 
       if (orderIds.length > 0) {
-        // Buscar líneas de pedido (Productos vendidos)
-        allLines = await client.searchRead('pos.order.line', [
-          ['order_id', 'in', orderIds]
-        ], ['order_id', 'product_id', 'qty', 'price_subtotal_incl']) || [];
-
-        // Buscar pagos (Métodos de pago)
-        allPayments = await client.searchRead('pos.payment', [
-          ['pos_order_id', 'in', orderIds]
-        ], ['pos_order_id', 'payment_method_id', 'amount']) || [];
+        allLines = await client.searchRead('pos.order.line', [['order_id', 'in', orderIds]], ['order_id', 'product_id', 'qty', 'price_subtotal_incl']) || [];
+        allPayments = await client.searchRead('pos.payment', [['pos_order_id', 'in', orderIds]], ['pos_order_id', 'payment_method_id', 'amount']) || [];
       }
 
-      // 3. Procesar Estadísticas por Sede
+      // 4. Procesar Estadísticas por Sede
       const stats: any = {};
       filteredConfigs.forEach(conf => {
         const posOrders = orders.filter(o => o.config_id && o.config_id[0] === conf.id);
         const posOrderIds = posOrders.map(o => o.id);
-        
         const posLines = allLines.filter(l => posOrderIds.includes(l.order_id[0]));
         const posPayments = allPayments.filter(p => posOrderIds.includes(p.pos_order_id[0]));
 
-        // Agrupar Productos Tops de esta sede
         const productMap: Record<string, any> = {};
         posLines.forEach(l => {
           const pId = l.product_id[0];
@@ -125,7 +131,6 @@ const App: React.FC = () => {
           productMap[pId].total += l.price_subtotal_incl;
         });
 
-        // Agrupar Métodos de Pago de esta sede
         const paymentMap: Record<string, number> = {};
         posPayments.forEach(p => {
           const mName = p.payment_method_id[1];
@@ -133,12 +138,11 @@ const App: React.FC = () => {
         });
 
         stats[conf.id] = {
-          // Estado real: Verificamos si existe una sesión en estado 'opened'
           isOnline: conf.current_session_state === 'opened', 
           rawState: conf.current_session_state || 'closed',
           totalSales: posOrders.reduce((acc, curr) => acc + (curr.amount_total || 0), 0),
           count: posOrders.length,
-          topProducts: Object.values(productMap).sort((a, b) => b.qty - a.qty).slice(0, 10),
+          topProducts: Object.values(productMap).sort((a: any, b: any) => b.qty - a.qty).slice(0, 10),
           payments: paymentMap
         };
       });
@@ -159,7 +163,7 @@ const App: React.FC = () => {
         '|', ['name', 'ilike', term], ['default_code', 'ilike', term]
       ], ['id', 'name', 'default_code', 'qty_available', 'list_price'], {
         context: originLocationId ? { location: originLocationId } : {},
-        limit: 15
+        limit: 20
       });
       setProducts(results || []);
     } catch (e: any) {
@@ -176,6 +180,7 @@ const App: React.FC = () => {
       const targetWarehouse = warehouses.find(w => w.id === targetWarehouseId);
       if (!targetWarehouse) throw new Error("Almacén de destino no válido");
 
+      // ID de Operación de Transferencia Interna
       const pickingTypeId = 5; 
       
       const pickingId = await client.create('stock.picking', {
@@ -317,7 +322,7 @@ const App: React.FC = () => {
       {loading && (
         <div className="fixed bottom-6 right-6 z-[200] bg-white px-6 py-3 rounded-lg shadow-xl border border-odoo-border flex items-center gap-4 animate-fade">
           <Loader2 className="animate-spin text-odoo-primary" size={20}/>
-          <p className="text-xs font-bold text-gray-700 uppercase tracking-tight">Procesando Inteligencia de Negocios...</p>
+          <p className="text-xs font-bold text-gray-700 uppercase tracking-tight">Sincronizando Almacenes San José...</p>
         </div>
       )}
     </div>

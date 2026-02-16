@@ -17,13 +17,13 @@ interface StaffManagementProps {
 }
 
 const DAYS_OF_WEEK = [
-  { label: 'Lunes', value: 1, short: 'L' },
-  { label: 'Martes', value: 2, short: 'M' },
-  { label: 'Miércoles', value: 3, short: 'M' },
-  { label: 'Jueves', value: 4, short: 'J' },
-  { label: 'Viernes', value: 5, short: 'V' },
-  { label: 'Sábado', value: 6, short: 'S' },
-  { label: 'Domingo', value: 0, short: 'D' },
+  { label: 'Lunes', value: 1, short: 'Lun' },
+  { label: 'Martes', value: 2, short: 'Mar' },
+  { label: 'Miércoles', value: 3, short: 'Mié' },
+  { label: 'Jueves', value: 4, short: 'Jue' },
+  { label: 'Viernes', value: 5, short: 'Vie' },
+  { label: 'Sábado', value: 6, short: 'Sáb' },
+  { label: 'Domingo', value: 0, short: 'Dom' },
 ];
 
 export const StaffManagement: React.FC<StaffManagementProps> = ({ 
@@ -273,148 +273,148 @@ export const StaffManagement: React.FC<StaffManagementProps> = ({
         </div>
       )}
 
-      {/* MODAL OPTIMIZADO PARA MÓVIL Y LAPS: "Ficha de Programación" */}
+      {/* MODAL REDISEÑADO: Máxima densidad vertical para visibilidad completa */}
       {showAddShift && (
-        <div className="fixed inset-0 z-[300] flex items-center justify-center p-2 sm:p-4 bg-slate-900/80 backdrop-blur-md overflow-hidden">
+        <div className="fixed inset-0 z-[300] flex items-center justify-center p-2 sm:p-4 bg-slate-900/90 backdrop-blur-sm overflow-hidden">
            <form 
             onSubmit={handleAddShiftRange} 
-            className="relative w-full max-w-4xl bg-white rounded-[32px] sm:rounded-[48px] shadow-2xl overflow-hidden animate-fade border border-white flex flex-col max-h-[96vh] sm:max-h-[92vh]"
+            className="relative w-full max-w-4xl bg-white rounded-[32px] sm:rounded-[40px] shadow-2xl overflow-hidden animate-fade border border-white flex flex-col max-h-[98vh] sm:max-h-[94vh]"
            >
-              {/* Header Modal - Compactado */}
-              <div className="px-6 sm:px-10 py-5 sm:py-8 bg-slate-50 border-b flex justify-between items-center shrink-0">
+              {/* Header Modal - Super Compacto */}
+              <div className="px-6 sm:px-8 py-3 sm:py-5 bg-slate-50 border-b flex justify-between items-center shrink-0">
                  <div className="flex items-center gap-3 sm:gap-4">
-                    <div className="w-10 h-10 sm:w-12 sm:h-12 bg-odoo-primary rounded-xl sm:rounded-2xl flex items-center justify-center text-white shadow-lg shadow-odoo-primary/20">
-                      <Plus size={20}/>
+                    <div className="w-8 h-8 sm:w-10 sm:h-10 bg-odoo-primary rounded-lg sm:rounded-xl flex items-center justify-center text-white shadow-md">
+                      <Plus size={18}/>
                     </div>
                     <div>
-                      <h3 className="text-base sm:text-xl font-black uppercase text-slate-800 tracking-tight leading-none">Nueva Programación</h3>
-                      <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1 sm:mt-1.5 flex items-center gap-2">
-                        <Zap size={10} className="text-odoo-primary"/> Gestión Mensual
+                      <h3 className="text-sm sm:text-lg font-black uppercase text-slate-800 tracking-tight leading-none">Nueva Programación</h3>
+                      <p className="text-[8px] sm:text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5 flex items-center gap-1">
+                        <Zap size={8} className="text-odoo-primary"/> Gestión de Turnos San José
                       </p>
                     </div>
                  </div>
                  <button 
                   type="button" 
                   onClick={() => setShowAddShift(false)} 
-                  className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center bg-white rounded-xl sm:rounded-2xl shadow-sm text-slate-400 hover:text-red-500 transition-all border border-slate-100"
+                  className="w-8 h-8 sm:w-10 sm:h-10 flex items-center justify-center bg-white rounded-lg sm:rounded-xl shadow-sm text-slate-400 hover:text-red-500 border border-slate-100"
                  >
-                    <X size={20}/>
+                    <X size={18}/>
                  </button>
               </div>
               
-              {/* Body Modal Scrollable - Rellenos responsivos */}
-              <div className="p-5 sm:p-10 overflow-y-auto custom-scrollbar flex-1 space-y-6 sm:space-y-8 bg-white">
+              {/* Body Modal - Espaciado Optimizado */}
+              <div className="p-4 sm:p-6 overflow-y-auto custom-scrollbar flex-1 space-y-4 sm:space-y-6 bg-white">
                  
-                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 sm:gap-10">
-                    {/* Columna 1 */}
-                    <div className="space-y-4 sm:space-y-6">
-                       <h4 className="text-[9px] sm:text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2 border-b border-slate-50 pb-2">
-                         <Users size={14}/> Datos Básicos
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+                    {/* Columna 1: Asignación */}
+                    <div className="space-y-3 sm:space-y-4">
+                       <h4 className="text-[8px] sm:text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2 border-b border-slate-50 pb-1">
+                         <Users size={12}/> Identificación
                        </h4>
                        
-                       <div className="space-y-1.5">
-                          <label className="text-[9px] font-black text-slate-500 uppercase ml-2 tracking-widest">Colaborador</label>
-                          <select name="employee_id" defaultValue={selectedEmployee?.id} className="w-full bg-slate-50 border border-slate-200 rounded-xl sm:rounded-2xl px-4 py-3 sm:py-4 text-[12px] font-bold text-slate-700 outline-none focus:ring-4 focus:ring-odoo-primary/5 transition-all">
+                       <div className="space-y-1">
+                          <label className="text-[8px] font-black text-slate-500 uppercase ml-1 tracking-widest">Colaborador Odoo</label>
+                          <select name="employee_id" defaultValue={selectedEmployee?.id} className="w-full bg-slate-50 border border-slate-200 rounded-lg sm:rounded-xl px-3 py-2 sm:py-3 text-[11px] font-bold text-slate-700 outline-none focus:ring-2 focus:ring-odoo-primary/10 transition-all">
                              {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
                           </select>
                        </div>
 
-                       <div className="grid grid-cols-2 gap-3 sm:gap-4">
-                          <div className="space-y-1.5">
-                             <label className="text-[9px] font-black text-slate-500 uppercase ml-2 tracking-widest">Inicio</label>
-                             <input type="date" name="start_date" required className="w-full bg-slate-50 border border-slate-200 rounded-xl sm:rounded-2xl px-4 py-3 sm:py-4 text-[12px] font-bold text-slate-700 outline-none" defaultValue={new Date().toISOString().split('T')[0]}/>
+                       <div className="grid grid-cols-2 gap-2 sm:gap-3">
+                          <div className="space-y-1">
+                             <label className="text-[8px] font-black text-slate-500 uppercase ml-1 tracking-widest">Fecha Inicio</label>
+                             <input type="date" name="start_date" required className="w-full bg-slate-50 border border-slate-200 rounded-lg sm:rounded-xl px-3 py-2 sm:py-3 text-[11px] font-bold text-slate-700 outline-none" defaultValue={new Date().toISOString().split('T')[0]}/>
                           </div>
-                          <div className="space-y-1.5">
-                             <label className="text-[9px] font-black text-slate-500 uppercase ml-2 tracking-widest">Fin</label>
-                             <input type="date" name="end_date" required className="w-full bg-slate-50 border border-slate-200 rounded-xl sm:rounded-2xl px-4 py-3 sm:py-4 text-[12px] font-bold text-slate-700 outline-none" defaultValue={new Date().toISOString().split('T')[0]}/>
+                          <div className="space-y-1">
+                             <label className="text-[8px] font-black text-slate-500 uppercase ml-1 tracking-widest">Fecha Fin</label>
+                             <input type="date" name="end_date" required className="w-full bg-slate-50 border border-slate-200 rounded-lg sm:rounded-xl px-3 py-2 sm:py-3 text-[11px] font-bold text-slate-700 outline-none" defaultValue={new Date().toISOString().split('T')[0]}/>
                           </div>
                        </div>
                     </div>
 
-                    {/* Columna 2 */}
-                    <div className="space-y-4 sm:space-y-6">
-                       <h4 className="text-[9px] sm:text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2 border-b border-slate-50 pb-2">
-                         <Clock size={14}/> Jornada
+                    {/* Columna 2: Jornada */}
+                    <div className="space-y-3 sm:space-y-4">
+                       <h4 className="text-[8px] sm:text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2 border-b border-slate-50 pb-1">
+                         <Clock size={12}/> Detalle Turno
                        </h4>
 
-                       <div className="space-y-1.5">
-                          <label className="text-[9px] font-black text-slate-500 uppercase ml-2 tracking-widest">Turno Base</label>
-                          <select 
-                            value={shiftType} 
-                            onChange={(e) => setShiftType(e.target.value as any)} 
-                            className="w-full bg-slate-50 border border-slate-200 rounded-xl sm:rounded-2xl px-4 py-3 sm:py-4 text-[12px] font-black uppercase text-slate-700 outline-none"
-                          >
-                             <option value="mañana">☀ Mañana</option>
-                             <option value="tarde">🌆 Tarde</option>
-                             <option value="completo">⚡ Completo</option>
-                             <option value="noche">🌙 Noche</option>
-                          </select>
-                       </div>
-
-                       <div className="space-y-1.5">
-                          <label className="text-[9px] font-black text-slate-500 uppercase ml-2 tracking-widest">Sede / Botica</label>
-                          <select name="pos_id" className="w-full bg-slate-50 border border-slate-200 rounded-xl sm:rounded-2xl px-4 py-3 sm:py-4 text-[12px] font-bold text-slate-700 outline-none">
-                             {posConfigs.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                          </select>
+                       <div className="grid grid-cols-2 gap-2 sm:gap-3">
+                          <div className="space-y-1">
+                            <label className="text-[8px] font-black text-slate-500 uppercase ml-1 tracking-widest">Turno Base</label>
+                            <select 
+                              value={shiftType} 
+                              onChange={(e) => setShiftType(e.target.value as any)} 
+                              className="w-full bg-slate-50 border border-slate-200 rounded-lg sm:rounded-xl px-3 py-2 sm:py-3 text-[11px] font-black uppercase text-slate-700 outline-none"
+                            >
+                               <option value="mañana">☀ Mañana</option>
+                               <option value="tarde">🌆 Tarde</option>
+                               <option value="completo">⚡ Completo</option>
+                               <option value="noche">🌙 Noche</option>
+                            </select>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[8px] font-black text-slate-500 uppercase ml-1 tracking-widest">Sede Botica</label>
+                            <select name="pos_id" className="w-full bg-slate-50 border border-slate-200 rounded-lg sm:rounded-xl px-3 py-2 sm:py-3 text-[11px] font-bold text-slate-700 outline-none">
+                               {posConfigs.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                            </select>
+                          </div>
                        </div>
                        
-                       <div className="grid grid-cols-2 gap-3 sm:gap-4">
-                          <div className="space-y-1.5">
-                             <label className="text-[9px] font-black text-slate-500 uppercase ml-2 tracking-widest">Entrada</label>
-                             <input type="time" name="start" required className="w-full bg-slate-50 border border-slate-200 rounded-xl sm:rounded-2xl px-4 py-3 sm:py-4 text-[12px] font-bold text-slate-700" defaultValue="08:00"/>
+                       <div className="grid grid-cols-2 gap-2 sm:gap-3">
+                          <div className="space-y-1">
+                             <label className="text-[8px] font-black text-slate-500 uppercase ml-1 tracking-widest">Hora Entrada</label>
+                             <input type="time" name="start" required className="w-full bg-slate-50 border border-slate-200 rounded-lg sm:rounded-xl px-3 py-2 sm:py-3 text-[11px] font-bold text-slate-700" defaultValue="08:00"/>
                           </div>
-                          <div className="space-y-1.5">
-                             <label className="text-[9px] font-black text-slate-500 uppercase ml-2 tracking-widest">Salida</label>
-                             <input type="time" name="end" required className="w-full bg-slate-50 border border-slate-200 rounded-xl sm:rounded-2xl px-4 py-3 sm:py-4 text-[12px] font-bold text-slate-700" defaultValue="14:00"/>
+                          <div className="space-y-1">
+                             <label className="text-[8px] font-black text-slate-500 uppercase ml-1 tracking-widest">Hora Salida</label>
+                             <input type="time" name="end" required className="w-full bg-slate-50 border border-slate-200 rounded-lg sm:rounded-xl px-3 py-2 sm:py-3 text-[11px] font-bold text-slate-700" defaultValue="14:00"/>
                           </div>
                        </div>
                     </div>
                  </div>
 
-                 {/* Descansos - Más compactos para móvil */}
-                 <div className="pt-5 border-t border-slate-100">
-                    <div className="flex items-center justify-between mb-3">
-                       <label className="text-[9px] sm:text-[10px] font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
-                         <Coffee size={14} className="text-odoo-primary"/> Descanso Semanal
-                       </label>
-                    </div>
-                    <div className="grid grid-cols-4 sm:grid-cols-7 gap-2 sm:gap-3">
+                 {/* Sección Descansos - Estética y Compacta */}
+                 <div className="pt-3 border-t border-slate-100">
+                    <label className="text-[8px] sm:text-[9px] font-black text-slate-800 uppercase tracking-widest flex items-center gap-2 mb-3">
+                       <Coffee size={12} className="text-odoo-primary"/> Días de Descanso Semanal
+                    </label>
+                    <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
                        {DAYS_OF_WEEK.map(day => (
                          <button 
                            key={day.value}
                            type="button"
                            onClick={() => toggleRestDay(day.value)}
-                           className={`relative py-3 sm:py-4 rounded-xl sm:rounded-2xl text-[9px] sm:text-[10px] font-black uppercase transition-all border flex flex-col items-center justify-center gap-1 ${
+                           className={`relative py-2 sm:py-3 rounded-lg sm:rounded-xl text-[9px] sm:text-[10px] font-black uppercase transition-all border flex flex-col items-center justify-center ${
                              restDays.includes(day.value) 
-                             ? 'bg-slate-900 text-white border-slate-900 shadow-lg scale-[1.02]' 
+                             ? 'bg-slate-900 text-white border-slate-900 shadow-lg' 
                              : 'bg-slate-50 text-slate-400 border-slate-200 hover:bg-white'
                            }`}
                          >
                            {restDays.includes(day.value) && (
-                              <div className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-emerald-500 text-white rounded-full flex items-center justify-center border-2 border-white shadow-sm">
+                              <div className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-emerald-500 text-white rounded-full flex items-center justify-center border-2 border-white">
                                 <Check size={8} strokeWidth={4}/>
                               </div>
                            )}
-                           <span className="opacity-60 text-[7px] sm:text-[8px]">{day.label}</span>
+                           <span className="opacity-60 text-[7px]">{day.short}</span>
+                           <span className="hidden sm:inline">{day.label}</span>
                          </button>
                        ))}
                     </div>
                  </div>
               </div>
 
-              {/* Footer Modal - Siempre al final y visible */}
-              <div className="px-6 sm:px-10 py-5 sm:py-8 bg-slate-50 border-t shrink-0">
+              {/* Footer Modal - Siempre a la vista */}
+              <div className="px-6 sm:px-8 py-4 sm:py-5 bg-slate-50 border-t shrink-0">
                  <button 
                   type="submit" 
                   disabled={dbLoading} 
-                  className="w-full bg-odoo-primary text-white py-4 sm:py-5 rounded-2xl sm:rounded-[28px] font-black uppercase text-[10px] sm:text-[12px] tracking-[0.2em] shadow-xl flex items-center justify-center gap-3 transition-all hover:scale-[1.01] active:scale-[0.98] disabled:opacity-50"
+                  className="w-full bg-odoo-primary text-white py-3 sm:py-4 rounded-xl sm:rounded-2xl font-black uppercase text-[10px] sm:text-[11px] tracking-[0.2em] shadow-lg flex items-center justify-center gap-3 hover:scale-[1.01] active:scale-[0.98] transition-all disabled:opacity-50"
                  >
                     {dbLoading ? (
                       <RefreshCw size={18} className="animate-spin"/> 
                     ) : (
-                      <Check size={20}/> 
+                      <Check size={18}/> 
                     )}
-                    <span>{dbLoading ? 'Procesando...' : 'Confirmar Programación'}</span>
+                    <span>{dbLoading ? 'Procesando Lote...' : 'Confirmar Programación'}</span>
                  </button>
               </div>
            </form>

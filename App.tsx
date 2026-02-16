@@ -68,7 +68,7 @@ const App: React.FC = () => {
       if (!companies || !companies.length) throw new Error("Compañía San José no encontrada.");
       const sanJoseId = companies[0].id;
 
-      // 1. Cargar Configuración de Puntos de Venta
+      // 1. Cargar Configuración de POS y Estado de Sesión Real
       const configs = await client.searchRead('pos.config', 
         [['company_id', '=', sanJoseId]], 
         ['name', 'id', 'current_session_id', 'current_session_state']
@@ -80,53 +80,66 @@ const App: React.FC = () => {
       );
       setPosConfigs(filteredConfigs);
 
-      // 2. Cargar Sesiones ABIERTAS con detalles de apertura (Para pestaña Sesiones)
-      const openSessions = await client.searchRead('pos.session', [
-        ['state', '=', 'opened'],
-        ['config_id', 'in', filteredConfigs.map(c => c.id)]
-      ], ['id', 'name', 'user_id', 'start_at', 'config_id']);
-      setActiveSessions(openSessions);
-
-      // 3. Cargar Almacenes
-      const ws = await client.searchRead('stock.warehouse', [['company_id', '=', sanJoseId]], ['name', 'id', 'code', 'lot_stock_id']);
-      setWarehouses(ws || []);
-      const principal = (ws || []).find((w: any) => w.code === 'PRINCIPAL1' || w.code === 'PR');
-      if (principal) {
-        setOriginWarehouseId(principal.id);
-        if (principal.lot_stock_id) setOriginLocationId(principal.lot_stock_id[0]);
-      }
-
-      // 4. Cargar Ventas del Rango (Día/Semana/Mes según filtro)
+      // 2. Cargar Pedidos con sus líneas y pagos
       const orders = await client.searchRead('pos.order', [
         ['company_id', '=', sanJoseId],
         ['date_order', '>=', `${dateRange.start} 00:00:00`],
         ['date_order', '<=', `${dateRange.end} 23:59:59`],
         ['state', 'in', ['paid', 'done', 'invoiced']]
-      ], ['id', 'amount_total', 'config_id', 'session_id']) || [];
+      ], ['id', 'amount_total', 'config_id', 'session_id', 'lines', 'payment_ids']) || [];
 
-      // 5. Vincular pedidos a sus respectivos POS configs
-      const allSessionsInRange = await client.searchRead('pos.session', [
-        ['config_id', 'in', filteredConfigs.map(c => c.id)],
-        ['start_at', '<=', `${dateRange.end} 23:59:59`],
-        ['stop_at', '>=', `${dateRange.start} 00:00:00`]
-      ], ['id', 'config_id']);
-      const sessionToConfigMap: Record<number, number> = {};
-      allSessionsInRange.forEach((s: any) => { if (s.config_id) sessionToConfigMap[s.id] = s.config_id[0]; });
+      // Extraer IDs para búsquedas masivas de detalles
+      const orderIds = orders.map(o => o.id);
+      
+      let allLines: any[] = [];
+      let allPayments: any[] = [];
 
-      // 6. Procesar estadísticas de ventas brutas por POS
+      if (orderIds.length > 0) {
+        // Buscar líneas de pedido (Productos vendidos)
+        allLines = await client.searchRead('pos.order.line', [
+          ['order_id', 'in', orderIds]
+        ], ['order_id', 'product_id', 'qty', 'price_subtotal_incl']) || [];
+
+        // Buscar pagos (Métodos de pago)
+        allPayments = await client.searchRead('pos.payment', [
+          ['pos_order_id', 'in', orderIds]
+        ], ['pos_order_id', 'payment_method_id', 'amount']) || [];
+      }
+
+      // 3. Procesar Estadísticas por Sede
       const stats: any = {};
       filteredConfigs.forEach(conf => {
-        const posOrders = orders.filter(o => {
-          const directMatch = o.config_id && o.config_id[0] === conf.id;
-          const sessionMatch = o.session_id && sessionToConfigMap[o.session_id[0]] === conf.id;
-          return directMatch || sessionMatch;
+        const posOrders = orders.filter(o => o.config_id && o.config_id[0] === conf.id);
+        const posOrderIds = posOrders.map(o => o.id);
+        
+        const posLines = allLines.filter(l => posOrderIds.includes(l.order_id[0]));
+        const posPayments = allPayments.filter(p => posOrderIds.includes(p.pos_order_id[0]));
+
+        // Agrupar Productos Tops de esta sede
+        const productMap: Record<string, any> = {};
+        posLines.forEach(l => {
+          const pId = l.product_id[0];
+          const pName = l.product_id[1];
+          if (!productMap[pId]) productMap[pId] = { name: pName, qty: 0, total: 0 };
+          productMap[pId].qty += l.qty;
+          productMap[pId].total += l.price_subtotal_incl;
+        });
+
+        // Agrupar Métodos de Pago de esta sede
+        const paymentMap: Record<string, number> = {};
+        posPayments.forEach(p => {
+          const mName = p.payment_method_id[1];
+          paymentMap[mName] = (paymentMap[mName] || 0) + p.amount;
         });
 
         stats[conf.id] = {
-          isOnline: conf.current_session_id !== false,
-          rawState: conf.current_session_state || 'CERRADO',
+          // Estado real: Verificamos si existe una sesión en estado 'opened'
+          isOnline: conf.current_session_state === 'opened', 
+          rawState: conf.current_session_state || 'closed',
           totalSales: posOrders.reduce((acc, curr) => acc + (curr.amount_total || 0), 0),
           count: posOrders.length,
+          topProducts: Object.values(productMap).sort((a, b) => b.qty - a.qty).slice(0, 10),
+          payments: paymentMap
         };
       });
 
@@ -136,6 +149,61 @@ const App: React.FC = () => {
       setErrorLog(e.message); 
     } finally { setLoading(false); }
   }, [client, view, dateRange]);
+
+  const handleProductSearch = async (term: string) => {
+    if (term.length < 3) return;
+    setLoading(true);
+    try {
+      const results = await client.searchRead('product.product', [
+        ['active', '=', true],
+        '|', ['name', 'ilike', term], ['default_code', 'ilike', term]
+      ], ['id', 'name', 'default_code', 'qty_available', 'list_price'], {
+        context: originLocationId ? { location: originLocationId } : {},
+        limit: 15
+      });
+      setProducts(results || []);
+    } catch (e: any) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmitOrder = async () => {
+    if (!targetWarehouseId || cart.length === 0) return;
+    setLoading(true);
+    try {
+      const targetWarehouse = warehouses.find(w => w.id === targetWarehouseId);
+      if (!targetWarehouse) throw new Error("Almacén de destino no válido");
+
+      const pickingTypeId = 5; 
+      
+      const pickingId = await client.create('stock.picking', {
+        picking_type_id: pickingTypeId,
+        location_id: originLocationId,
+        location_dest_id: targetWarehouse.lot_stock_id?.[0],
+        origin: `Solicitud App - ${session?.name}`,
+        move_ids_without_package: cart.map(item => [0, 0, {
+          name: item.name,
+          product_id: item.id,
+          product_uom_qty: item.qty,
+          product_uom: 1,
+          location_id: originLocationId,
+          location_dest_id: targetWarehouse.lot_stock_id?.[0],
+        }])
+      });
+
+      if (pickingId) {
+        alert(`Transferencia ${pickingId} creada exitosamente en Odoo.`);
+        setCart([]);
+        setTargetWarehouseId(null);
+      }
+    } catch (e: any) {
+      alert("Error al crear la transferencia: " + e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -158,7 +226,7 @@ const App: React.FC = () => {
   if (view === 'login') {
     return (
       <div className="h-screen flex items-center justify-center p-6 bg-[#f1f4f9]">
-         <div className="bg-white w-full max-w-[420px] shadow-xl rounded-odoo p-10 space-y-8 animate-fade">
+         <div className="bg-white w-full max-w-[420px] shadow-xl rounded-odoo p-10 space-y-8">
             <div className="flex flex-col items-center space-y-4">
               <div className="w-16 h-16 bg-odoo-primary rounded-xl flex items-center justify-center text-white text-3xl font-bold italic shadow-lg">SJ</div>
               <h1 className="text-xl font-bold text-gray-700">Boticas San José</h1>
@@ -222,24 +290,34 @@ const App: React.FC = () => {
              <div className="px-6 mt-8 mb-4"><h3 className="text-[11px] font-black text-gray-400 uppercase tracking-widest">Operaciones</h3></div>
              <button onClick={() => setActiveTab('pedidos')} className={`o-sidebar-item w-[calc(100%-16px)] ${activeTab === 'pedidos' ? 'active' : ''}`}><Truck size={18} /> Logística Interna</button>
           </div>
-          <div className="p-4 border-t border-gray-100 flex items-center justify-between opacity-50">
-             <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-green-500"></div><span className="text-[10px] font-bold uppercase">Conectado</span></div>
-             <span className="text-[10px] font-bold italic">{lastSync}</span>
-          </div>
         </aside>
 
         <main className="flex-1 overflow-y-auto p-6 md:p-10 custom-scrollbar bg-odoo-bg">
           {activeTab === 'dashboard' && <Dashboard posConfigs={posConfigs} posSalesData={posSalesData} lastSync={lastSync} />}
           {activeTab === 'sesiones' && <SessionModule activeSessions={activeSessions} loading={loading} />}
           {activeTab === 'ventas' && <AuditModule posConfigs={posConfigs} posSalesData={posSalesData} onSelect={(pos) => setPosSalesData((prev:any) => ({...prev, _selected: pos}))} selectedPos={posSalesData._selected} onCloseDetail={() => setPosSalesData((prev:any) => ({...prev, _selected: null}))} />}
-          {activeTab === 'pedidos' && <OrderModule productSearch={productSearch} setProductSearch={setProductSearch} onSearch={() => {}} products={[]} cart={[]} setCart={() => {}} warehouses={[]} targetWarehouseId={null} setTargetWarehouseId={() => {}} onSubmitOrder={() => {}} loading={loading} />}
+          {activeTab === 'pedidos' && (
+            <OrderModule 
+              productSearch={productSearch} 
+              setProductSearch={setProductSearch} 
+              onSearch={handleProductSearch} 
+              products={products} 
+              cart={cart} 
+              setCart={setCart} 
+              warehouses={warehouses.filter(w => w.id !== originWarehouseId)} 
+              targetWarehouseId={targetWarehouseId} 
+              setTargetWarehouseId={setTargetWarehouseId} 
+              onSubmitOrder={handleSubmitOrder} 
+              loading={loading} 
+            />
+          )}
         </main>
       </div>
 
       {loading && (
         <div className="fixed bottom-6 right-6 z-[200] bg-white px-6 py-3 rounded-lg shadow-xl border border-odoo-border flex items-center gap-4 animate-fade">
           <Loader2 className="animate-spin text-odoo-primary" size={20}/>
-          <p className="text-xs font-bold text-gray-700 uppercase tracking-tight">Sincronizando con Servidor San José...</p>
+          <p className="text-xs font-bold text-gray-700 uppercase tracking-tight">Procesando Inteligencia de Negocios...</p>
         </div>
       )}
     </div>

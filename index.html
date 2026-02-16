@@ -39,13 +39,19 @@
       }
     </script>
     <style>
+        html, body {
+          height: 100%;
+          margin: 0;
+          background-color: #f8fafc;
+        }
+        
         body { 
-          background-color: #f8fafc; 
           color: #1e293b; 
           font-family: 'Plus Jakarta Sans', sans-serif; 
-          overflow: hidden; 
           -webkit-font-smoothing: antialiased; 
-          touch-action: manipulation;
+          /* Permitir scroll y gestos nativos del navegador */
+          overflow-x: hidden;
+          overscroll-behavior-y: auto;
         }
         
         .custom-scrollbar::-webkit-scrollbar { width: 5px; height: 5px; }

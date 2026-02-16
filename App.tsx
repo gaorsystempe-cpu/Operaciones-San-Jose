@@ -21,6 +21,8 @@ const DEFAULT_CONFIG: AppConfig = {
   companyName: "CADENA DE BOTICAS SAN JOSE S.A.C."
 };
 
+const ADMIN_EMAILS = ['soporte@facturaclic.pe', 'admin1@sanjose.pe'];
+
 const App: React.FC = () => {
   const getPeruDateString = () => {
     const date = new Date();
@@ -38,8 +40,22 @@ const App: React.FC = () => {
     return saved ? JSON.parse(saved) : null;
   });
 
+  const isAdmin = useMemo(() => {
+    if (!session || !session.login) return false;
+    return ADMIN_EMAILS.includes(session.login.toLowerCase());
+  }, [session]);
+
   const [view, setView] = useState<'login' | 'app'>(session ? 'app' : 'login');
-  const [activeTab, setActiveTab] = useState('dashboard');
+  
+  // Si no es admin, la pestaña por defecto siempre debe ser pedidos
+  const [activeTab, setActiveTab] = useState(() => {
+    if (session) {
+      const isUserAdmin = ADMIN_EMAILS.includes(session.login?.toLowerCase());
+      return isUserAdmin ? 'dashboard' : 'pedidos';
+    }
+    return 'dashboard';
+  });
+
   const [loading, setLoading] = useState(false);
   const [lastSync, setLastSync] = useState("");
   const [errorLog, setErrorLog] = useState<string | null>(null);
@@ -68,37 +84,16 @@ const App: React.FC = () => {
     setLoading(true);
     setErrorLog(null);
     try {
-      // MECANISMO DE RESILIENCIA: Si el cliente perdió el UID (F5), re-autenticar automáticamente
       if (!client.isAuthenticated()) {
         const uid = await client.authenticate(config.user, config.apiKey);
-        if (!uid) throw new Error("Sesión de Odoo expirada. Por favor, reingrese.");
+        if (!uid) throw new Error("Sesión expirada.");
       }
 
-      // 1. Validar Compañía
       const companies = await client.searchRead('res.company', [['name', 'ilike', 'SAN JOSE']], ['id']);
-      if (!companies || !companies.length) throw new Error("Compañía San José no encontrada.");
+      if (!companies || !companies.length) throw new Error("Compañía no encontrada.");
       const sanJoseId = companies[0].id;
 
-      // 2. Cargar Configuración de POS
-      const configs = await client.searchRead('pos.config', 
-        [['company_id', '=', sanJoseId]], 
-        ['name', 'id', 'current_session_id', 'current_session_state']
-      ) || [];
-      
-      const blacklist = ['CRUZ', 'CHALPON', 'INDACOCHEA', 'AMAY', 'P&P', 'P & P'];
-      const filteredConfigs = configs.filter((c: any) => 
-        !blacklist.some(term => c.name.toUpperCase().includes(term))
-      );
-      setPosConfigs(filteredConfigs);
-
-      // 3. Cargar Sesiones Abiertas
-      const openSessions = await client.searchRead('pos.session', [
-        ['state', '=', 'opened'],
-        ['config_id', 'in', filteredConfigs.map(c => c.id)]
-      ], ['id', 'name', 'user_id', 'start_at', 'config_id']) || [];
-      setActiveSessions(openSessions);
-
-      // 4. Cargar Almacenes
+      // Cargar Almacenes (Necesario para ambos roles)
       const ws = await client.searchRead('stock.warehouse', [['company_id', '=', sanJoseId]], ['name', 'id', 'code', 'lot_stock_id']);
       setWarehouses(ws || []);
       
@@ -110,64 +105,80 @@ const App: React.FC = () => {
         if (principal.lot_stock_id) setOriginLocationId(principal.lot_stock_id[0]);
       }
 
-      // 5. Cargar Ventas
-      const orders = await client.searchRead('pos.order', [
-        ['company_id', '=', sanJoseId],
-        ['date_order', '>=', `${dateRange.start} 00:00:00`],
-        ['date_order', '<=', `${dateRange.end} 23:59:59`],
-        ['state', 'in', ['paid', 'done', 'invoiced']]
-      ], ['id', 'amount_total', 'config_id', 'session_id', 'lines', 'payment_ids']) || [];
+      // Solo si es ADMIN cargamos datos pesados de ventas y sesiones
+      if (isAdmin) {
+        const configs = await client.searchRead('pos.config', 
+          [['company_id', '=', sanJoseId]], 
+          ['name', 'id', 'current_session_id', 'current_session_state']
+        ) || [];
+        
+        const blacklist = ['CRUZ', 'CHALPON', 'INDACOCHEA', 'AMAY', 'P&P', 'P & P'];
+        const filteredConfigs = configs.filter((c: any) => 
+          !blacklist.some(term => c.name.toUpperCase().includes(term))
+        );
+        setPosConfigs(filteredConfigs);
 
-      const orderIds = orders.map(o => o.id);
-      let allLines: any[] = [];
-      let allPayments: any[] = [];
+        const openSessions = await client.searchRead('pos.session', [
+          ['state', '=', 'opened'],
+          ['config_id', 'in', filteredConfigs.map(c => c.id)]
+        ], ['id', 'name', 'user_id', 'start_at', 'config_id']) || [];
+        setActiveSessions(openSessions);
 
-      if (orderIds.length > 0) {
-        allLines = await client.searchRead('pos.order.line', [['order_id', 'in', orderIds]], ['order_id', 'product_id', 'qty', 'price_subtotal_incl']) || [];
-        allPayments = await client.searchRead('pos.payment', [['pos_order_id', 'in', orderIds]], ['pos_order_id', 'payment_method_id', 'amount']) || [];
+        const orders = await client.searchRead('pos.order', [
+          ['company_id', '=', sanJoseId],
+          ['date_order', '>=', `${dateRange.start} 00:00:00`],
+          ['date_order', '<=', `${dateRange.end} 23:59:59`],
+          ['state', 'in', ['paid', 'done', 'invoiced']]
+        ], ['id', 'amount_total', 'config_id', 'session_id', 'lines', 'payment_ids']) || [];
+
+        const orderIds = orders.map(o => o.id);
+        let allLines: any[] = [];
+        let allPayments: any[] = [];
+
+        if (orderIds.length > 0) {
+          allLines = await client.searchRead('pos.order.line', [['order_id', 'in', orderIds]], ['order_id', 'product_id', 'qty', 'price_subtotal_incl']) || [];
+          allPayments = await client.searchRead('pos.payment', [['pos_order_id', 'in', orderIds]], ['pos_order_id', 'payment_method_id', 'amount']) || [];
+        }
+
+        const stats: any = {};
+        filteredConfigs.forEach(conf => {
+          const posOrders = orders.filter(o => o.config_id && o.config_id[0] === conf.id);
+          const posOrderIds = posOrders.map(o => o.id);
+          const posLines = allLines.filter(l => posOrderIds.includes(l.order_id[0]));
+          const posPayments = allPayments.filter(p => posOrderIds.includes(p.pos_order_id[0]));
+          const hasOpenSession = openSessions.some((s: any) => s.config_id && s.config_id[0] === conf.id);
+
+          const productMap: Record<string, any> = {};
+          posLines.forEach(l => {
+            const pId = l.product_id[0];
+            const pName = l.product_id[1];
+            if (!productMap[pId]) productMap[pId] = { name: pName, qty: 0, total: 0 };
+            productMap[pId].qty += l.qty;
+            productMap[pId].total += l.price_subtotal_incl;
+          });
+
+          const paymentMap: Record<string, number> = {};
+          posPayments.forEach(p => {
+            const mName = p.payment_method_id[1];
+            paymentMap[mName] = (paymentMap[mName] || 0) + p.amount;
+          });
+
+          stats[conf.id] = {
+            isOnline: hasOpenSession, 
+            totalSales: posOrders.reduce((acc, curr) => acc + (curr.amount_total || 0), 0),
+            count: posOrders.length,
+            topProducts: Object.values(productMap).sort((a: any, b: any) => b.qty - a.qty).slice(0, 10),
+            payments: paymentMap
+          };
+        });
+        setPosSalesData(stats);
       }
 
-      const stats: any = {};
-      filteredConfigs.forEach(conf => {
-        const posOrders = orders.filter(o => o.config_id && o.config_id[0] === conf.id);
-        const posOrderIds = posOrders.map(o => o.id);
-        const posLines = allLines.filter(l => posOrderIds.includes(l.order_id[0]));
-        const posPayments = allPayments.filter(p => posOrderIds.includes(p.pos_order_id[0]));
-        const hasOpenSession = openSessions.some((s: any) => s.config_id && s.config_id[0] === conf.id);
-
-        const productMap: Record<string, any> = {};
-        posLines.forEach(l => {
-          const pId = l.product_id[0];
-          const pName = l.product_id[1];
-          if (!productMap[pId]) productMap[pId] = { name: pName, qty: 0, total: 0 };
-          productMap[pId].qty += l.qty;
-          productMap[pId].total += l.price_subtotal_incl;
-        });
-
-        const paymentMap: Record<string, number> = {};
-        posPayments.forEach(p => {
-          const mName = p.payment_method_id[1];
-          paymentMap[mName] = (paymentMap[mName] || 0) + p.amount;
-        });
-
-        stats[conf.id] = {
-          isOnline: hasOpenSession, 
-          rawState: hasOpenSession ? 'opened' : 'closed',
-          totalSales: posOrders.reduce((acc, curr) => acc + (curr.amount_total || 0), 0),
-          count: posOrders.length,
-          topProducts: Object.values(productMap).sort((a: any, b: any) => b.qty - a.qty).slice(0, 10),
-          payments: paymentMap
-        };
-      });
-
-      setPosSalesData(stats);
       setLastSync(new Date().toLocaleTimeString('es-PE'));
     } catch (e: any) { 
       setErrorLog(e.message);
-      // Si el error es de autenticación grave, no cerrar sesión, solo avisar
-      console.error("Fetch Error:", e.message);
     } finally { setLoading(false); }
-  }, [client, view, dateRange, config]);
+  }, [client, view, dateRange, config, isAdmin]);
 
   useEffect(() => {
     if (view === 'app') fetchData();
@@ -178,14 +189,24 @@ const App: React.FC = () => {
     setLoading(true);
     try {
       const uid = await client.authenticate(config.user, config.apiKey);
-      if (!uid) throw new Error("Credenciales maestras de Odoo inválidas.");
+      if (!uid) throw new Error("Credenciales maestras inválidas.");
       
-      const user = await client.searchRead('res.users', [['login', '=', loginInput]], ['name'], { limit: 1 });
-      if (!user || !user.length) throw new Error("ID de Usuario no encontrado en San José.");
+      const user = await client.searchRead('res.users', [['login', '=', loginInput.trim()]], ['name', 'login'], { limit: 1 });
+      if (!user || !user.length) throw new Error("ID de Usuario no encontrado.");
       
-      const sessionData = { name: user[0].name };
+      const userLogin = user[0].login;
+      const sessionData = { 
+        name: user[0].name, 
+        login: userLogin
+      };
+      
       localStorage.setItem('sjs_ops_session', JSON.stringify(sessionData));
       setSession(sessionData);
+      
+      // Ajustar pestaña inicial al login
+      const isUserAdmin = ADMIN_EMAILS.includes(userLogin.toLowerCase());
+      setActiveTab(isUserAdmin ? 'dashboard' : 'pedidos');
+      
       setView('app');
     } catch (e: any) { 
       setErrorLog(e.message); 
@@ -237,7 +258,7 @@ const App: React.FC = () => {
         }])
       });
       if (pickingId) {
-        alert(`Transferencia #${pickingId} generada.`);
+        alert(`Pedido #${pickingId} enviado con éxito.`);
         setCart([]);
         setTargetWarehouseId(null);
       }
@@ -252,19 +273,19 @@ const App: React.FC = () => {
               <div className="w-20 h-20 bg-odoo-primary rounded-2xl flex items-center justify-center text-white text-4xl font-black italic shadow-xl">SJ</div>
               <div className="text-center">
                 <h1 className="text-xl font-black text-gray-800 uppercase tracking-tighter">Boticas San José</h1>
-                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">Operations Hub Login</p>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">Portal de Operaciones</p>
               </div>
             </div>
             <form onSubmit={handleLogin} className="space-y-6">
               <div className="space-y-1.5">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1">ID de Usuario</label>
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1">Usuario / Email Odoo</label>
                 <div className="relative">
                    <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16}/>
-                   <input type="text" className="w-full o-input pl-10 py-3" placeholder="Ej: jherrera" value={loginInput} onChange={e => setLoginInput(e.target.value)} required />
+                   <input type="text" className="w-full o-input pl-10 py-3" placeholder="Ej: admin1@sanjose.pe" value={loginInput} onChange={e => setLoginInput(e.target.value)} required />
                 </div>
               </div>
               <button disabled={loading} className="w-full o-btn o-btn-primary py-4 text-xs font-black uppercase tracking-widest shadow-lg">
-                {loading ? <Loader2 className="animate-spin" size={20}/> : "Ingresar al Hub"}
+                {loading ? <Loader2 className="animate-spin" size={20}/> : "Iniciar Sesión"}
               </button>
             </form>
             {errorLog && <div className="p-3 bg-red-50 text-red-600 text-[10px] rounded border border-red-100 text-center font-bold uppercase">{errorLog}</div>}
@@ -280,10 +301,13 @@ const App: React.FC = () => {
           <button className="h-full px-3 hover:bg-black/10 transition-colors"><Grid size={20} /></button>
           <div className="h-4 w-px bg-white/20 mx-2"></div>
           <span className="text-sm font-black tracking-tight px-3 h-full flex items-center">SAN JOSÉ HUB</span>
+          <div className={`ml-2 px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest ${isAdmin ? 'bg-amber-500' : 'bg-green-500'}`}>
+            {isAdmin ? 'ADMINISTRADOR' : 'VENDEDOR / LOGÍSTICA'}
+          </div>
         </div>
         <div className="flex items-center gap-2 h-full">
-          <div className="flex items-center gap-2 px-3 h-full cursor-pointer hover:bg-black/10 transition-colors">
-            <div className="w-6 h-6 bg-white/20 rounded-full flex items-center justify-center text-[10px] font-black">{session?.name?.[0]}</div>
+          <div className="flex items-center gap-2 px-3 h-full cursor-default">
+            <div className="w-6 h-6 bg-white/20 rounded-full flex items-center justify-center text-[10px] font-black uppercase">{session?.name?.[0]}</div>
             <span className="text-[11px] font-bold hidden sm:inline uppercase">{session?.name}</span>
           </div>
           <button onClick={handleLogout} className="h-full px-3 hover:bg-red-500 transition-colors" title="Cerrar Sistema"><LogOut size={16}/></button>
@@ -293,31 +317,40 @@ const App: React.FC = () => {
       <div className="flex-1 flex overflow-hidden">
         <aside className="w-64 bg-white border-r border-odoo-border hidden md:flex flex-col shrink-0 py-4 shadow-sm z-50">
           <div className="flex-1 space-y-1 overflow-y-auto custom-scrollbar">
-             <div className="px-6 mb-4 mt-2"><h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Inteligencia</h3></div>
-             <button onClick={() => setActiveTab('dashboard')} className={`o-sidebar-item w-[calc(100%-16px)] ${activeTab === 'dashboard' ? 'active' : ''}`}><LayoutDashboard size={18} /> Resumen Ventas</button>
-             <button onClick={() => setActiveTab('sesiones')} className={`o-sidebar-item w-[calc(100%-16px)] ${activeTab === 'sesiones' ? 'active' : ''}`}><Clock size={18} /> Monitor Sesiones</button>
-             <button onClick={() => setActiveTab('ventas')} className={`o-sidebar-item w-[calc(100%-16px)] ${activeTab === 'ventas' ? 'active' : ''}`}><TrendingUp size={18} /> Auditoría Puntos</button>
-             
-             <div className="px-6 mt-8 mb-4"><h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Control Temporal</h3></div>
-             <div className="px-4 space-y-4">
-                <div className="space-y-1 px-4"><label className="text-[10px] font-bold text-gray-400 uppercase">Desde</label><input type="date" value={dateRange.start} onChange={e => setDateRange({...dateRange, start: e.target.value})} className="w-full o-input text-xs font-bold"/></div>
-                <div className="space-y-1 px-4"><label className="text-[10px] font-bold text-gray-400 uppercase">Hasta</label><input type="date" value={dateRange.end} onChange={e => setDateRange({...dateRange, end: e.target.value})} className="w-full o-input text-xs font-bold"/></div>
-                <div className="px-4 pt-2">
-                  <button onClick={fetchData} className="w-full o-btn o-btn-primary text-[10px] font-black gap-2 py-3 uppercase tracking-widest shadow-md">
-                    <RefreshCw size={14} className={loading ? 'animate-spin' : ''}/> Sincronizar Odoo
-                  </button>
-                </div>
-             </div>
+             {isAdmin && (
+               <>
+                 <div className="px-6 mb-4 mt-2"><h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Inteligencia</h3></div>
+                 <button onClick={() => setActiveTab('dashboard')} className={`o-sidebar-item w-[calc(100%-16px)] ${activeTab === 'dashboard' ? 'active' : ''}`}><LayoutDashboard size={18} /> Resumen Ventas</button>
+                 <button onClick={() => setActiveTab('sesiones')} className={`o-sidebar-item w-[calc(100%-16px)] ${activeTab === 'sesiones' ? 'active' : ''}`}><Clock size={18} /> Monitor Sesiones</button>
+                 <button onClick={() => setActiveTab('ventas')} className={`o-sidebar-item w-[calc(100%-16px)] ${activeTab === 'ventas' ? 'active' : ''}`}><TrendingUp size={18} /> Auditoría Puntos</button>
+                 
+                 <div className="px-6 mt-8 mb-4"><h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Control Temporal</h3></div>
+                 <div className="px-4 space-y-4">
+                    <div className="space-y-1 px-4"><label className="text-[10px] font-bold text-gray-400 uppercase">Desde</label><input type="date" value={dateRange.start} onChange={e => setDateRange({...dateRange, start: e.target.value})} className="w-full o-input text-xs font-bold"/></div>
+                    <div className="space-y-1 px-4"><label className="text-[10px] font-bold text-gray-400 uppercase">Hasta</label><input type="date" value={dateRange.end} onChange={e => setDateRange({...dateRange, end: e.target.value})} className="w-full o-input text-xs font-bold"/></div>
+                    <div className="px-4 pt-2">
+                      <button onClick={fetchData} className="w-full o-btn o-btn-primary text-[10px] font-black gap-2 py-3 uppercase tracking-widest shadow-md">
+                        <RefreshCw size={14} className={loading ? 'animate-spin' : ''}/> Actualizar Odoo
+                      </button>
+                    </div>
+                 </div>
+               </>
+             )}
 
              <div className="px-6 mt-8 mb-4"><h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Operaciones</h3></div>
              <button onClick={() => setActiveTab('pedidos')} className={`o-sidebar-item w-[calc(100%-16px)] ${activeTab === 'pedidos' ? 'active' : ''}`}><Truck size={18} /> Logística Interna</button>
+             {!isAdmin && (
+               <div className="px-8 mt-4">
+                  <p className="text-[9px] text-gray-400 font-bold italic">Acceso restringido a solo pedidos según política de tienda.</p>
+               </div>
+             )}
           </div>
         </aside>
 
         <main className="flex-1 overflow-y-auto p-6 md:p-10 custom-scrollbar bg-odoo-bg animate-fade">
-          {activeTab === 'dashboard' && <Dashboard posConfigs={posConfigs} posSalesData={posSalesData} lastSync={lastSync} />}
-          {activeTab === 'sesiones' && <SessionModule activeSessions={activeSessions} loading={loading} />}
-          {activeTab === 'ventas' && <AuditModule posConfigs={posConfigs} posSalesData={posSalesData} onSelect={(pos) => setPosSalesData((prev:any) => ({...prev, _selected: pos}))} selectedPos={posSalesData._selected} onCloseDetail={() => setPosSalesData((prev:any) => ({...prev, _selected: null}))} />}
+          {activeTab === 'dashboard' && isAdmin && <Dashboard posConfigs={posConfigs} posSalesData={posSalesData} lastSync={lastSync} />}
+          {activeTab === 'sesiones' && isAdmin && <SessionModule activeSessions={activeSessions} loading={loading} />}
+          {activeTab === 'ventas' && isAdmin && <AuditModule posConfigs={posConfigs} posSalesData={posSalesData} onSelect={(pos) => setPosSalesData((prev:any) => ({...prev, _selected: pos}))} selectedPos={posSalesData._selected} onCloseDetail={() => setPosSalesData((prev:any) => ({...prev, _selected: null}))} />}
           {activeTab === 'pedidos' && (
             <OrderModule 
               productSearch={productSearch} 
@@ -332,6 +365,15 @@ const App: React.FC = () => {
               onSubmitOrder={handleSubmitOrder} 
               loading={loading} 
             />
+          )}
+          {/* Protección para vendedores que intenten ver otras pestañas */}
+          {!isAdmin && activeTab !== 'pedidos' && (
+            <div className="flex flex-col items-center justify-center h-full text-center space-y-4 opacity-50">
+               <AlertTriangle size={64} className="text-amber-500" />
+               <h3 className="text-xl font-black uppercase">Acceso No Autorizado</h3>
+               <p className="text-sm font-bold text-gray-500">Su cuenta solo tiene permisos para el módulo de Logística.</p>
+               <button onClick={() => setActiveTab('pedidos')} className="o-btn o-btn-primary px-8">Ir a Mis Pedidos</button>
+            </div>
           )}
         </main>
       </div>

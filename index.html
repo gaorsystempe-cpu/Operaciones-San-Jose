@@ -3,10 +3,10 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SJS Operaciones | Boticas San José</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>SJS Hub | Boticas San José</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <script>
       tailwind.config = {
         theme: {
@@ -15,25 +15,24 @@
               odoo: {
                 primary: '#714B67',
                 secondary: '#017e84',
-                success: '#00A09D',
-                info: '#00A09D',
-                warning: '#E4A11B',
-                danger: '#DC3545',
-                light: '#f8f9fa',
-                dark: '#212529',
-                border: '#e1e4e8',
-                bg: '#f1f4f9',
-                text: '#4c4c4c',
+                success: '#10b981',
+                warning: '#f59e0b',
+                danger: '#ef4444',
+                bg: '#f8fafc',
                 card: '#ffffff'
               }
             },
             fontFamily: {
-              sans: ['Inter', 'sans-serif'],
+              sans: ['"Plus Jakarta Sans"', 'sans-serif'],
             },
-            borderRadius: {
-              'odoo': '4px',
-              'odoo-lg': '8px',
-              'odoo-xl': '12px'
+            animation: {
+              'bounce-slow': 'bounce-slow 3s infinite',
+            },
+            keyframes: {
+              'bounce-slow': {
+                '0%, 100%': { transform: 'translateY(0)', animationTimingFunction: 'cubic-bezier(0.8,0,1,1)' },
+                '50%': { transform: 'translateY(-10px)', animationTimingFunction: 'cubic-bezier(0,0,0.2,1)' },
+              }
             }
           }
         }
@@ -41,96 +40,65 @@
     </script>
     <style>
         body { 
-          background-color: #f1f4f9; 
-          color: #4c4c4c; 
-          font-family: 'Inter', sans-serif; 
+          background-color: #f8fafc; 
+          color: #1e293b; 
+          font-family: 'Plus Jakarta Sans', sans-serif; 
           overflow: hidden; 
           -webkit-font-smoothing: antialiased; 
+          touch-action: manipulation;
         }
         
-        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scrollbar::-webkit-scrollbar { width: 5px; height: 5px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #ced4da; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #714B67; }
 
         .o-btn {
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          padding: 6px 12px;
-          font-weight: 500;
-          font-size: 14px;
-          border-radius: 4px;
-          transition: all 0.15s ease-in-out;
+          padding: 10px 20px;
+          font-weight: 700;
+          font-size: 13px;
+          border-radius: 16px;
+          transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
           cursor: pointer;
         }
 
         .o-btn-primary { 
           background-color: #714B67; 
           color: white; 
-          border: 1px solid #714B67;
+          box-shadow: 0 10px 25px -5px rgba(113, 75, 103, 0.2);
         }
-        .o-btn-primary:hover { background-color: #5a3c52; border-color: #5a3c52; }
-
-        .o-btn-secondary {
-          background-color: white;
-          color: #714B67;
-          border: 1px solid #dee2e6;
-        }
-        .o-btn-secondary:hover { background-color: #f8f9fa; border-color: #ced4da; }
-
-        .o-card {
-          background: white;
-          border: 1px solid #e1e4e8;
-          border-radius: 4px;
-          box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-        }
-
-        .o-input {
-          border: 1px solid #dee2e6;
-          border-radius: 4px;
-          padding: 8px 12px;
-          font-size: 14px;
-          outline: none;
-          transition: border-color 0.2s;
-        }
-        .o-input:focus { border-color: #714B67; box-shadow: 0 0 0 3px rgba(113, 75, 103, 0.1); }
-
-        .o-nav-item {
-          color: rgba(255,255,255,0.8);
-          font-weight: 500;
-          font-size: 14px;
-          padding: 0 16px;
-          height: 100%;
-          display: flex;
-          align-items: center;
-          transition: all 0.2s;
-        }
-        .o-nav-item:hover, .o-nav-item.active {
-          color: white;
-          background-color: rgba(0,0,0,0.1);
-        }
+        .o-btn-primary:hover { transform: translateY(-2px); box-shadow: 0 15px 30px -5px rgba(113, 75, 103, 0.3); }
 
         .o-sidebar-item {
-          padding: 8px 16px;
-          border-radius: 4px;
-          margin: 2px 8px;
+          padding: 12px 18px;
+          border-radius: 20px;
+          margin: 6px 0;
           font-size: 13px;
-          color: #4c4c4c;
+          color: #94a3b8;
           display: flex;
           align-items: center;
-          gap: 12px;
-          transition: all 0.15s;
-        }
-        .o-sidebar-item:hover { background-color: #e9ecef; }
-        .o-sidebar-item.active { 
-          background-color: rgba(113, 75, 103, 0.08); 
-          color: #714B67;
+          gap: 14px;
+          transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
           font-weight: 600;
         }
+        .o-sidebar-item:hover { background-color: #f8fafc; color: #714B67; transform: translateX(5px); }
+        .o-sidebar-item.active { 
+          background-color: #fdf2f8; 
+          color: #714B67;
+          font-weight: 800;
+          box-shadow: inset 0 0 0 1px rgba(113, 75, 103, 0.1);
+        }
 
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        .animate-fade { animation: fadeIn 0.2s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-fade { animation: fadeIn 0.5s ease-out forwards; }
+
+        input[type="date"]::-webkit-calendar-picker-indicator {
+          opacity: 0.5;
+          cursor: pointer;
+        }
     </style>
 <script type="importmap">
 {

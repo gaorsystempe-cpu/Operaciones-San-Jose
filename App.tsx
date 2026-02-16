@@ -228,10 +228,10 @@ const App: React.FC = () => {
             <div className="inline-flex p-4 bg-white rounded-[32px] shadow-[0_20px_50px_-12px_rgba(113,75,103,0.15)] mb-4 animate-bounce-slow border border-odoo-primary/5">
                <div className="w-16 h-16 bg-gradient-to-br from-odoo-primary to-[#8b5e7e] rounded-2xl flex items-center justify-center text-white text-3xl font-black italic shadow-inner">SJ</div>
             </div>
-            <h1 className="text-3xl font-black text-slate-800 uppercase tracking-tighter">San José <span className="text-odoo-primary">Hub</span></h1>
+            <h1 className="text-3xl font-black text-slate-800 uppercase tracking-tighter">BOTICAS <span className="text-odoo-primary">SAN JOSE</span></h1>
             <div className="flex items-center justify-center gap-2">
                <div className="h-px w-8 bg-slate-200"></div>
-               <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.4em]">Operations Core 2026</p>
+               <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.4em]">CENTRO DE OPERACIONES</p>
                <div className="h-px w-8 bg-slate-200"></div>
             </div>
           </div>
@@ -284,8 +284,8 @@ const App: React.FC = () => {
         <div className="flex items-center h-full">
           <div className="w-9 h-9 bg-odoo-primary rounded-xl flex items-center justify-center text-white text-[10px] font-black italic mr-3 shadow-lg shadow-odoo-primary/20">SJ</div>
           <div className="flex flex-col">
-            <span className="text-sm font-black tracking-tight text-slate-800 leading-none">SAN JOSÉ HUB</span>
-            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Core Operations</span>
+            <span className="text-sm font-black tracking-tight text-slate-800 leading-none uppercase">BOTICAS SAN JOSE</span>
+            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">CENTRO DE OPERACIONES</span>
           </div>
           <div className="h-4 w-px bg-slate-200 mx-4"></div>
           <div className={`px-2.5 py-1 rounded-full text-[8px] font-black uppercase tracking-widest ${isAdmin ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>

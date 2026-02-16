@@ -28,16 +28,17 @@ export const shiftService = {
     return data;
   },
 
-  async createShift(shiftData: any) {
-    // Normalizamos el email a minúsculas para evitar errores de búsqueda
-    const payload = {
-      ...shiftData,
-      employee_email: shiftData.employee_email?.toLowerCase().trim()
-    };
+  async createShifts(shiftsData: any[]) {
+    const payload = shiftsData.map(s => ({
+      ...s,
+      employee_email: s.employee_email?.toLowerCase().trim()
+    }));
+    
     const { data, error } = await supabase
       .from('shifts')
-      .insert([payload])
+      .insert(payload)
       .select();
+      
     if (error) throw error;
     return data;
   },

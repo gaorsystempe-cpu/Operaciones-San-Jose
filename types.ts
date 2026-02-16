@@ -40,6 +40,23 @@ export interface Employee {
   department_id?: [number, string];
   resource_calendar_id?: [number, string];
   user_id?: [number, string];
+  image_128?: string;
+}
+
+export interface Shift {
+  id: string;
+  employee_id: number;
+  employee_name: string;
+  employee_email: string;
+  pos_id: number;
+  pos_name: string;
+  date: string;
+  shift_type: 'mañana' | 'tarde' | 'completo' | 'noche';
+  start_time: string;
+  end_time: string;
+  status: 'confirmed' | 'pending';
+  created_at?: string;
+  created_by?: string;
 }
 
 export interface AppConfig {

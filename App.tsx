@@ -4,15 +4,16 @@ import {
   LogOut, RefreshCw, User as UserIcon, Loader2, 
   LayoutDashboard, Truck, TrendingUp, AlertTriangle, Calendar, DollarSign, 
   Settings, Grid, Bell, HelpCircle, Package, Store, Clock, UserCheck,
-  ExternalLink, ChevronRight, Menu, X, ShieldCheck, Zap
+  ExternalLink, ChevronRight, Menu, X, ShieldCheck, Zap, Users
 } from 'lucide-react';
 import { OdooClient } from './services/odooService';
-import { AppConfig, Product, Warehouse } from './types';
+import { AppConfig, Product, Warehouse, Employee } from './types';
 
 import { Dashboard } from './components/Dashboard';
 import { AuditModule } from './components/AuditModule';
 import { OrderModule } from './components/OrderModule';
 import { SessionModule } from './components/SessionModule';
+import { StaffManagement } from './components/StaffManagement';
 
 const DEFAULT_CONFIG: AppConfig = {
   url: "https://mitienda.facturaclic.pe",
@@ -64,6 +65,7 @@ const App: React.FC = () => {
   const [posConfigs, setPosConfigs] = useState<any[]>([]);
   const [posSalesData, setPosSalesData] = useState<any>({});
   const [activeSessions, setActiveSessions] = useState<any[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
   const [dateRange, setDateRange] = useState({ 
     start: getPeruDateString(), 
     end: getPeruDateString() 
@@ -93,6 +95,7 @@ const App: React.FC = () => {
       if (!companies || !companies.length) throw new Error("Compañía no encontrada.");
       const sanJoseId = companies[0].id;
 
+      // Cargar Almacenes
       const ws = await client.searchRead('stock.warehouse', [['company_id', '=', sanJoseId]], ['name', 'id', 'code', 'lot_stock_id']);
       setWarehouses(ws || []);
       
@@ -103,6 +106,10 @@ const App: React.FC = () => {
         setOriginWarehouseId(principal.id);
         if (principal.lot_stock_id) setOriginLocationId(principal.lot_stock_id[0]);
       }
+
+      // Cargar Empleados (Nueva Función)
+      const empData = await client.searchRead('hr.employee', [['active', '=', true]], ['id', 'name', 'job_title', 'work_email', 'work_phone', 'department_id', 'image_128']) || [];
+      setEmployees(empData);
 
       if (isAdmin) {
         const configs = await client.searchRead('pos.config', [['company_id', '=', sanJoseId]], ['name', 'id']) || [];
@@ -212,10 +219,7 @@ const App: React.FC = () => {
   if (view === 'login') {
     return (
       <div className="min-h-screen relative flex items-center justify-center p-4 bg-[#f8fafc] overflow-hidden font-sans">
-        {/* Patrón de fondo "Engineer Grid" */}
         <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: 'radial-gradient(#714B67 1px, transparent 0)', backgroundSize: '40px 40px' }}></div>
-        
-        {/* Decoraciones suaves */}
         <div className="absolute top-[-20%] left-[-10%] w-[600px] h-[600px] bg-odoo-primary/5 rounded-full blur-[120px]"></div>
         <div className="absolute bottom-[-20%] right-[-10%] w-[500px] h-[500px] bg-sky-500/5 rounded-full blur-[100px]"></div>
 
@@ -301,7 +305,6 @@ const App: React.FC = () => {
       </header>
 
       <div className="flex-1 flex overflow-hidden relative">
-        {/* Sidebar Desktop - Ultra Clean */}
         <aside className="w-64 bg-white border-r border-slate-200 hidden md:flex flex-col shrink-0 py-8 z-50">
           <div className="flex-1 space-y-1 overflow-y-auto custom-scrollbar px-4">
              {isAdmin && (
@@ -311,6 +314,9 @@ const App: React.FC = () => {
                  <button onClick={() => setActiveTab('sesiones')} className={`o-sidebar-item ${activeTab === 'sesiones' ? 'active' : ''}`}><Clock size={18} /> Control Sesiones</button>
                  <button onClick={() => setActiveTab('ventas')} className={`o-sidebar-item ${activeTab === 'ventas' ? 'active' : ''}`}><TrendingUp size={18} /> Auditoría Puntos</button>
                  
+                 <div className="px-4 mt-8 mb-4"><h3 className="text-[9px] font-black text-slate-300 uppercase tracking-[0.3em]">Gestión RRHH</h3></div>
+                 <button onClick={() => setActiveTab('personal')} className={`o-sidebar-item ${activeTab === 'personal' ? 'active' : ''}`}><Users size={18} /> Personal y Horarios</button>
+
                  <div className="px-4 mt-8 mb-4"><h3 className="text-[9px] font-black text-slate-300 uppercase tracking-[0.3em]">Parámetros</h3></div>
                  <div className="px-4 space-y-4">
                     <div className="space-y-2">
@@ -332,6 +338,7 @@ const App: React.FC = () => {
 
              <div className="px-4 mt-8 mb-4"><h3 className="text-[9px] font-black text-slate-300 uppercase tracking-[0.3em]">Operativo</h3></div>
              <button onClick={() => setActiveTab('pedidos')} className={`o-sidebar-item ${activeTab === 'pedidos' ? 'active' : ''}`}><Truck size={18} /> Logística Interna</button>
+             {!isAdmin && <button onClick={() => setActiveTab('personal')} className={`o-sidebar-item ${activeTab === 'personal' ? 'active' : ''}`}><Clock size={18} /> Mis Horarios</button>}
           </div>
           <div className="px-8 py-6 border-t border-slate-50">
              <div className="flex flex-col items-center gap-1 opacity-40 grayscale hover:grayscale-0 transition-all">
@@ -341,15 +348,14 @@ const App: React.FC = () => {
           </div>
         </aside>
 
-        {/* Mobile Bottom Navigation - Minimalist Light */}
         <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-white/90 backdrop-blur-xl border-t border-slate-200 flex items-center justify-around z-[200] px-4 shadow-[0_-10px_30px_rgba(0,0,0,0.03)] rounded-t-[24px]">
            {isAdmin ? (
              <>
                <button onClick={() => setActiveTab('dashboard')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'dashboard' ? 'text-odoo-primary scale-110' : 'text-slate-300'}`}>
                  <LayoutDashboard size={22} strokeWidth={activeTab === 'dashboard' ? 3 : 2}/><span className="text-[8px] font-black uppercase tracking-widest">BI</span>
                </button>
-               <button onClick={() => setActiveTab('sesiones')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'sesiones' ? 'text-odoo-primary scale-110' : 'text-slate-300'}`}>
-                 <Clock size={22} strokeWidth={activeTab === 'sesiones' ? 3 : 2}/><span className="text-[8px] font-black uppercase tracking-widest">Sesion</span>
+               <button onClick={() => setActiveTab('personal')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'personal' ? 'text-odoo-primary scale-110' : 'text-slate-300'}`}>
+                 <Users size={22} strokeWidth={activeTab === 'personal' ? 3 : 2}/><span className="text-[8px] font-black uppercase tracking-widest">Team</span>
                </button>
                <button onClick={() => setActiveTab('ventas')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'ventas' ? 'text-odoo-primary scale-110' : 'text-slate-300'}`}>
                  <TrendingUp size={22} strokeWidth={activeTab === 'ventas' ? 3 : 2}/><span className="text-[8px] font-black uppercase tracking-widest">Audit</span>
@@ -359,12 +365,18 @@ const App: React.FC = () => {
            <button onClick={() => setActiveTab('pedidos')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'pedidos' ? 'text-odoo-primary scale-110' : 'text-slate-300'}`}>
              <Truck size={22} strokeWidth={activeTab === 'pedidos' ? 3 : 2}/><span className="text-[8px] font-black uppercase tracking-widest">Envios</span>
            </button>
+           {!isAdmin && (
+             <button onClick={() => setActiveTab('personal')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'personal' ? 'text-odoo-primary scale-110' : 'text-slate-300'}`}>
+               <Clock size={22} strokeWidth={activeTab === 'personal' ? 3 : 2}/><span className="text-[8px] font-black uppercase tracking-widest">Mis Horas</span>
+             </button>
+           )}
         </nav>
 
         <main className="flex-1 overflow-y-auto p-4 md:p-10 custom-scrollbar bg-slate-50 pb-24 md:pb-10">
           {activeTab === 'dashboard' && isAdmin && <Dashboard posConfigs={posConfigs} posSalesData={posSalesData} lastSync={lastSync} />}
           {activeTab === 'sesiones' && isAdmin && <SessionModule activeSessions={activeSessions} loading={loading} />}
           {activeTab === 'ventas' && isAdmin && <AuditModule posConfigs={posConfigs} posSalesData={posSalesData} onSelect={(pos) => setPosSalesData((prev:any) => ({...prev, _selected: pos}))} selectedPos={posSalesData._selected} onCloseDetail={() => setPosSalesData((prev:any) => ({...prev, _selected: null}))} />}
+          {activeTab === 'personal' && <StaffManagement isAdmin={isAdmin} employees={employees} posConfigs={posConfigs} currentUserEmail={session?.login} loading={loading} />}
           {activeTab === 'pedidos' && (
             <OrderModule 
               productSearch={productSearch} 
@@ -380,25 +392,13 @@ const App: React.FC = () => {
               loading={loading} 
             />
           )}
-          {!isAdmin && activeTab !== 'pedidos' && (
-            <div className="flex flex-col items-center justify-center h-full text-center space-y-6 opacity-80 animate-fade">
-               <div className="w-20 h-20 bg-amber-50 rounded-full flex items-center justify-center text-amber-500">
-                  <AlertTriangle size={40} />
-               </div>
-               <div className="space-y-2">
-                 <h3 className="text-xl font-black text-slate-800 uppercase">Sección Restringida</h3>
-                 <p className="text-sm font-medium text-slate-400">Su perfil solo permite realizar pedidos logísticos.</p>
-               </div>
-               <button onClick={() => setActiveTab('pedidos')} className="o-btn o-btn-primary px-10 py-4 rounded-2xl shadow-xl shadow-odoo-primary/20 uppercase tracking-widest text-xs font-black">Abrir Logística</button>
-            </div>
-          )}
         </main>
       </div>
 
       {loading && (
         <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[300] bg-white border border-slate-200 px-6 py-3 rounded-full shadow-2xl flex items-center gap-4 animate-in slide-in-from-top duration-300">
           <Loader2 size={18} className="text-odoo-primary animate-spin" />
-          <p className="text-[10px] font-black text-slate-700 uppercase tracking-[0.2em]">Procesando con Odoo...</p>
+          <p className="text-[10px] font-black text-slate-700 uppercase tracking-[0.2em]">Odoo en Tiempo Real...</p>
         </div>
       )}
     </div>

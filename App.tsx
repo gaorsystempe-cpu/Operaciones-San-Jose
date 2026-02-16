@@ -68,7 +68,7 @@ const App: React.FC = () => {
       if (!companies || !companies.length) throw new Error("Compañía San José no encontrada.");
       const sanJoseId = companies[0].id;
 
-      // 1. Cargar Cajas
+      // 1. Cargar Configuración de Puntos de Venta
       const configs = await client.searchRead('pos.config', 
         [['company_id', '=', sanJoseId]], 
         ['name', 'id', 'current_session_id', 'current_session_state']
@@ -80,7 +80,7 @@ const App: React.FC = () => {
       );
       setPosConfigs(filteredConfigs);
 
-      // 2. Cargar Sesiones Abiertas Detalladas
+      // 2. Cargar Sesiones ABIERTAS con detalles de apertura (Para pestaña Sesiones)
       const openSessions = await client.searchRead('pos.session', [
         ['state', '=', 'opened'],
         ['config_id', 'in', filteredConfigs.map(c => c.id)]
@@ -96,7 +96,7 @@ const App: React.FC = () => {
         if (principal.lot_stock_id) setOriginLocationId(principal.lot_stock_id[0]);
       }
 
-      // 4. Cargar Pedidos del Rango
+      // 4. Cargar Ventas del Rango (Día/Semana/Mes según filtro)
       const orders = await client.searchRead('pos.order', [
         ['company_id', '=', sanJoseId],
         ['date_order', '>=', `${dateRange.start} 00:00:00`],
@@ -104,7 +104,7 @@ const App: React.FC = () => {
         ['state', 'in', ['paid', 'done', 'invoiced']]
       ], ['id', 'amount_total', 'config_id', 'session_id']) || [];
 
-      // 5. Mapeo de Sesiones a Config
+      // 5. Vincular pedidos a sus respectivos POS configs
       const allSessionsInRange = await client.searchRead('pos.session', [
         ['config_id', 'in', filteredConfigs.map(c => c.id)],
         ['start_at', '<=', `${dateRange.end} 23:59:59`],
@@ -113,7 +113,7 @@ const App: React.FC = () => {
       const sessionToConfigMap: Record<number, number> = {};
       allSessionsInRange.forEach((s: any) => { if (s.config_id) sessionToConfigMap[s.id] = s.config_id[0]; });
 
-      // 6. Consolidar solo Ventas (Sin Márgenes)
+      // 6. Procesar estadísticas de ventas brutas por POS
       const stats: any = {};
       filteredConfigs.forEach(conf => {
         const posOrders = orders.filter(o => {
@@ -158,7 +158,7 @@ const App: React.FC = () => {
   if (view === 'login') {
     return (
       <div className="h-screen flex items-center justify-center p-6 bg-[#f1f4f9]">
-         <div className="bg-white w-full max-w-[420px] shadow-xl rounded-odoo p-10 space-y-8">
+         <div className="bg-white w-full max-w-[420px] shadow-xl rounded-odoo p-10 space-y-8 animate-fade">
             <div className="flex flex-col items-center space-y-4">
               <div className="w-16 h-16 bg-odoo-primary rounded-xl flex items-center justify-center text-white text-3xl font-bold italic shadow-lg">SJ</div>
               <h1 className="text-xl font-bold text-gray-700">Boticas San José</h1>
@@ -184,36 +184,47 @@ const App: React.FC = () => {
         <div className="flex items-center h-full">
           <button className="h-full px-3 hover:bg-black/10 transition-colors"><Grid size={20} /></button>
           <div className="h-4 w-px bg-white/20 mx-2"></div>
-          <span className="text-sm font-bold tracking-tight px-3 h-full flex items-center">San José Operations</span>
+          <span className="text-sm font-bold tracking-tight px-3 h-full flex items-center">San José Operations Hub</span>
           <div className="hidden md:flex h-full ml-4">
-             {[{id:'dashboard', label:'Dashboard'}, {id:'sesiones', label:'Estado Sesiones'}, {id:'ventas', label:'Auditoría'}, {id:'pedidos', label:'Logística'}].map(tab => (
+             {[{id:'dashboard', label:'Panel Ejecutivo'}, {id:'sesiones', label:'Control Sesiones'}, {id:'ventas', label:'Ranking Ventas'}, {id:'pedidos', label:'Logística'}].map(tab => (
                <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`o-nav-item ${activeTab === tab.id ? 'active' : ''}`}>{tab.label}</button>
              ))}
           </div>
         </div>
         <div className="flex items-center gap-2 h-full">
-          <div className="flex items-center gap-2 px-3 h-full">
+          <div className="flex items-center gap-2 px-3 h-full cursor-pointer hover:bg-black/10 transition-colors">
             <div className="w-6 h-6 bg-white/20 rounded-full flex items-center justify-center text-[10px] font-bold">{session?.name?.[0]}</div>
             <span className="text-xs font-medium hidden sm:inline">{session?.name}</span>
           </div>
-          <button onClick={() => setView('login')} className="h-full px-3 hover:bg-red-500/80 transition-colors"><LogOut size={16}/></button>
+          <button onClick={() => setView('login')} className="h-full px-3 hover:bg-red-500/80 transition-colors" title="Cerrar"><LogOut size={16}/></button>
         </div>
       </header>
 
       <div className="flex-1 flex overflow-hidden">
         <aside className="w-64 bg-white border-r border-odoo-border hidden md:flex flex-col shrink-0 py-4">
           <div className="flex-1 space-y-1">
-             <div className="px-6 mb-4"><h3 className="text-[11px] font-black text-gray-400 uppercase tracking-widest">Módulos</h3></div>
-             <button onClick={() => setActiveTab('dashboard')} className={`o-sidebar-item w-[calc(100%-16px)] ${activeTab === 'dashboard' ? 'active' : ''}`}><LayoutDashboard size={18} /> Dashboard</button>
-             <button onClick={() => setActiveTab('sesiones')} className={`o-sidebar-item w-[calc(100%-16px)] ${activeTab === 'sesiones' ? 'active' : ''}`}><Clock size={18} /> Estado de Sesiones</button>
-             <button onClick={() => setActiveTab('ventas')} className={`o-sidebar-item w-[calc(100%-16px)] ${activeTab === 'ventas' ? 'active' : ''}`}><TrendingUp size={18} /> Auditoría Ventas</button>
-             <button onClick={() => setActiveTab('pedidos')} className={`o-sidebar-item w-[calc(100%-16px)] ${activeTab === 'pedidos' ? 'active' : ''}`}><Truck size={18} /> Logística Interna</button>
-             <div className="px-6 mt-8 mb-4"><h3 className="text-[11px] font-black text-gray-400 uppercase tracking-widest">Filtros</h3></div>
+             <div className="px-6 mb-4"><h3 className="text-[11px] font-black text-gray-400 uppercase tracking-widest">Inteligencia</h3></div>
+             <button onClick={() => setActiveTab('dashboard')} className={`o-sidebar-item w-[calc(100%-16px)] ${activeTab === 'dashboard' ? 'active' : ''}`}><LayoutDashboard size={18} /> Resumen Ventas</button>
+             <button onClick={() => setActiveTab('sesiones')} className={`o-sidebar-item w-[calc(100%-16px)] ${activeTab === 'sesiones' ? 'active' : ''}`}><Clock size={18} /> Monitor Sesiones</button>
+             <button onClick={() => setActiveTab('ventas')} className={`o-sidebar-item w-[calc(100%-16px)] ${activeTab === 'ventas' ? 'active' : ''}`}><TrendingUp size={18} /> Auditoría Puntos</button>
+             
+             <div className="px-6 mt-8 mb-4"><h3 className="text-[11px] font-black text-gray-400 uppercase tracking-widest">Rango de Análisis</h3></div>
              <div className="px-4 space-y-4">
                 <div className="space-y-1 px-4"><label className="text-[10px] font-bold text-gray-400 uppercase">Desde</label><input type="date" value={dateRange.start} onChange={e => setDateRange({...dateRange, start: e.target.value})} className="w-full o-input text-xs"/></div>
                 <div className="space-y-1 px-4"><label className="text-[10px] font-bold text-gray-400 uppercase">Hasta</label><input type="date" value={dateRange.end} onChange={e => setDateRange({...dateRange, end: e.target.value})} className="w-full o-input text-xs"/></div>
-                <div className="px-4 pt-2"><button onClick={fetchData} className="w-full o-btn o-btn-primary text-xs gap-2 py-2"><RefreshCw size={14} className={loading ? 'animate-spin' : ''}/> Sincronizar</button></div>
+                <div className="px-4 pt-2">
+                  <button onClick={fetchData} className="w-full o-btn o-btn-primary text-xs gap-2 py-2">
+                    <RefreshCw size={14} className={loading ? 'animate-spin' : ''}/> Sincronizar Odoo
+                  </button>
+                </div>
              </div>
+
+             <div className="px-6 mt-8 mb-4"><h3 className="text-[11px] font-black text-gray-400 uppercase tracking-widest">Operaciones</h3></div>
+             <button onClick={() => setActiveTab('pedidos')} className={`o-sidebar-item w-[calc(100%-16px)] ${activeTab === 'pedidos' ? 'active' : ''}`}><Truck size={18} /> Logística Interna</button>
+          </div>
+          <div className="p-4 border-t border-gray-100 flex items-center justify-between opacity-50">
+             <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-green-500"></div><span className="text-[10px] font-bold uppercase">Conectado</span></div>
+             <span className="text-[10px] font-bold italic">{lastSync}</span>
           </div>
         </aside>
 
@@ -224,6 +235,13 @@ const App: React.FC = () => {
           {activeTab === 'pedidos' && <OrderModule productSearch={productSearch} setProductSearch={setProductSearch} onSearch={() => {}} products={[]} cart={[]} setCart={() => {}} warehouses={[]} targetWarehouseId={null} setTargetWarehouseId={() => {}} onSubmitOrder={() => {}} loading={loading} />}
         </main>
       </div>
+
+      {loading && (
+        <div className="fixed bottom-6 right-6 z-[200] bg-white px-6 py-3 rounded-lg shadow-xl border border-odoo-border flex items-center gap-4 animate-fade">
+          <Loader2 className="animate-spin text-odoo-primary" size={20}/>
+          <p className="text-xs font-bold text-gray-700 uppercase tracking-tight">Sincronizando con Servidor San José...</p>
+        </div>
+      )}
     </div>
   );
 };

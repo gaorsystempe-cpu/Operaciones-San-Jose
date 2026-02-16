@@ -55,11 +55,16 @@ const parseValue = (node: Element): any => {
 };
 
 export class OdooClient {
-  private uid: number | null = null;
+  public uid: number | null = null;
   private apiKey: string | null = null;
 
   constructor(private url: string, private db: string) {
     this.url = this.url.replace(/\/+$/, '');
+  }
+
+  // Permite verificar si el cliente tiene credenciales activas en memoria
+  isAuthenticated(): boolean {
+    return this.uid !== null && this.apiKey !== null;
   }
 
   setAuth(uid: number, apiKey: string) {

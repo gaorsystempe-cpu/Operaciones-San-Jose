@@ -33,7 +33,6 @@ const App: React.FC = () => {
     return saved ? JSON.parse(saved) : DEFAULT_CONFIG;
   });
 
-  // Persistencia de sesión para evitar cierres inesperados
   const [session, setSession] = useState<any | null>(() => {
     const saved = localStorage.getItem('sjs_ops_session');
     return saved ? JSON.parse(saved) : null;
@@ -69,6 +68,12 @@ const App: React.FC = () => {
     setLoading(true);
     setErrorLog(null);
     try {
+      // MECANISMO DE RESILIENCIA: Si el cliente perdió el UID (F5), re-autenticar automáticamente
+      if (!client.isAuthenticated()) {
+        const uid = await client.authenticate(config.user, config.apiKey);
+        if (!uid) throw new Error("Sesión de Odoo expirada. Por favor, reingrese.");
+      }
+
       // 1. Validar Compañía
       const companies = await client.searchRead('res.company', [['name', 'ilike', 'SAN JOSE']], ['id']);
       if (!companies || !companies.length) throw new Error("Compañía San José no encontrada.");
@@ -86,18 +91,17 @@ const App: React.FC = () => {
       );
       setPosConfigs(filteredConfigs);
 
-      // 3. CARGAR SESIONES ABIERTAS (CRÍTICO)
+      // 3. Cargar Sesiones Abiertas
       const openSessions = await client.searchRead('pos.session', [
         ['state', '=', 'opened'],
         ['config_id', 'in', filteredConfigs.map(c => c.id)]
       ], ['id', 'name', 'user_id', 'start_at', 'config_id']) || [];
       setActiveSessions(openSessions);
 
-      // 4. CARGAR ALMACENES PARA LOGÍSTICA
+      // 4. Cargar Almacenes
       const ws = await client.searchRead('stock.warehouse', [['company_id', '=', sanJoseId]], ['name', 'id', 'code', 'lot_stock_id']);
       setWarehouses(ws || []);
       
-      // Intentar auto-detectar el almacén principal
       const principal = (ws || []).find((w: any) => 
         w.code === 'PR' || w.code === 'PRINCIPAL1' || w.name.toUpperCase().includes('PRINCIPAL')
       );
@@ -106,7 +110,7 @@ const App: React.FC = () => {
         if (principal.lot_stock_id) setOriginLocationId(principal.lot_stock_id[0]);
       }
 
-      // 5. Cargar Datos de Ventas para Auditoría y BI
+      // 5. Cargar Ventas
       const orders = await client.searchRead('pos.order', [
         ['company_id', '=', sanJoseId],
         ['date_order', '>=', `${dateRange.start} 00:00:00`],
@@ -129,8 +133,6 @@ const App: React.FC = () => {
         const posOrderIds = posOrders.map(o => o.id);
         const posLines = allLines.filter(l => posOrderIds.includes(l.order_id[0]));
         const posPayments = allPayments.filter(p => posOrderIds.includes(p.pos_order_id[0]));
-
-        // Detectar si esta configuración tiene una sesión abierta real en el array de sesiones
         const hasOpenSession = openSessions.some((s: any) => s.config_id && s.config_id[0] === conf.id);
 
         const productMap: Record<string, any> = {};
@@ -161,9 +163,11 @@ const App: React.FC = () => {
       setPosSalesData(stats);
       setLastSync(new Date().toLocaleTimeString('es-PE'));
     } catch (e: any) { 
-      setErrorLog(e.message); 
+      setErrorLog(e.message);
+      // Si el error es de autenticación grave, no cerrar sesión, solo avisar
+      console.error("Fetch Error:", e.message);
     } finally { setLoading(false); }
-  }, [client, view, dateRange]);
+  }, [client, view, dateRange, config]);
 
   useEffect(() => {
     if (view === 'app') fetchData();
@@ -233,7 +237,7 @@ const App: React.FC = () => {
         }])
       });
       if (pickingId) {
-        alert(`Transferencia #${pickingId} generada. Pendiente de envío en Odoo.`);
+        alert(`Transferencia #${pickingId} generada.`);
         setCart([]);
         setTargetWarehouseId(null);
       }

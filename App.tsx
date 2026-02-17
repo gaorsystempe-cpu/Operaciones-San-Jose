@@ -25,6 +25,9 @@ const DEFAULT_CONFIG: AppConfig = {
 
 const ADMIN_EMAILS = ['soporte@facturaclic.pe', 'admin1@sanjose.pe'];
 
+// Lista negra de nombres a filtrar por petición del usuario
+const EXCLUDED_EMPLOYEE_NAMES = ['YULI', 'DEMO', '3E', 'PROBANDO', 'TEST', 'USUARIO'];
+
 const App: React.FC = () => {
   const getPeruDateString = () => {
     const date = new Date();
@@ -106,8 +109,24 @@ const App: React.FC = () => {
         if (principal.lot_stock_id) setOriginLocationId(principal.lot_stock_id[0]);
       }
 
+      // Fetch y filtrado de empleados solicitado
       const empData = await client.searchRead('hr.employee', [['active', '=', true]], ['id', 'name', 'job_title', 'work_email', 'work_phone', 'department_id', 'image_128']) || [];
-      setEmployees(empData);
+      
+      const filteredEmps = empData.filter((emp: any) => {
+        const nameUpper = emp.name.toUpperCase();
+        const trimmedName = emp.name.trim();
+        
+        // Reglas de filtrado:
+        // 1. No debe estar en la lista negra
+        // 2. El nombre debe tener más de 2 caracteres (para quitar "e", "d", etc)
+        // 3. No debe ser solo caracteres basura
+        const isExcluded = EXCLUDED_EMPLOYEE_NAMES.some(term => nameUpper.includes(term));
+        const isTooShort = trimmedName.length <= 2;
+        
+        return !isExcluded && !isTooShort;
+      });
+
+      setEmployees(filteredEmps);
 
       if (isAdmin) {
         const configs = await client.searchRead('pos.config', [['company_id', '=', sanJoseId]], ['name', 'id']) || [];

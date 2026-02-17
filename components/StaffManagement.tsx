@@ -208,52 +208,68 @@ export const StaffManagement: React.FC<StaffManagementProps> = ({
         </div>
       )}
 
-      {/* FICHA DE REGISTRO - ULTRA COMPACTA Y FIJA */}
+      {/* FICHA DE REGISTRO - REDISEÑADA PARA VISIBILIDAD TOTAL */}
       {showAddShift && (
-        <div className="fixed inset-0 z-[300] flex items-center justify-center p-2 bg-slate-900/90 backdrop-blur-sm overflow-hidden">
-           <form onSubmit={handleAddShiftRange} className="relative w-full max-w-4xl bg-white rounded-[40px] shadow-2xl flex flex-col max-h-[95vh] animate-fade border border-white">
-              
-              <div className="px-8 py-4 bg-slate-50 border-b flex justify-between items-center shrink-0">
+        <div className="fixed inset-0 z-[300] flex items-center justify-center p-2 sm:p-4 bg-slate-900/90 backdrop-blur-sm">
+           <form 
+            onSubmit={handleAddShiftRange} 
+            className="relative w-full max-w-4xl bg-white rounded-[32px] sm:rounded-[40px] shadow-2xl flex flex-col max-h-[92vh] overflow-hidden animate-fade border border-white"
+           >
+              {/* Header de la Ficha - Compacto */}
+              <div className="px-6 sm:px-8 py-3 sm:py-4 bg-slate-50 border-b flex justify-between items-center shrink-0">
                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-odoo-primary rounded-xl flex items-center justify-center text-white"><Plus size={20}/></div>
+                    <div className="w-9 h-9 sm:w-10 sm:h-10 bg-odoo-primary rounded-xl flex items-center justify-center text-white shadow-md">
+                      <Plus size={18}/>
+                    </div>
                     <div>
-                      <h3 className="text-lg font-black uppercase text-slate-800 tracking-tight leading-none">Nueva Programación</h3>
-                      <p className="text-[9px] font-bold text-slate-400 uppercase mt-1 tracking-widest">Lote Mensual San José</p>
+                      <h3 className="text-base sm:text-lg font-black uppercase text-slate-800 tracking-tight leading-none">Nueva Programación</h3>
+                      <p className="text-[8px] sm:text-[9px] font-bold text-slate-400 uppercase mt-0.5 tracking-widest">Boticas San José Hub</p>
                     </div>
                  </div>
-                 <button type="button" onClick={() => setShowAddShift(false)} className="w-10 h-10 flex items-center justify-center bg-white rounded-xl shadow-sm text-slate-400 hover:text-red-500 border border-slate-100 transition-all"><X size={20}/></button>
+                 <button 
+                  type="button" 
+                  onClick={() => setShowAddShift(false)} 
+                  className="w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center bg-white rounded-xl shadow-sm text-slate-400 hover:text-red-500 border border-slate-100 transition-all"
+                 >
+                    <X size={18}/>
+                 </button>
               </div>
               
-              <div className="p-6 overflow-y-auto custom-scrollbar flex-1 space-y-5 bg-white">
-                 <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-4">
-                    {/* Sección 1 */}
-                    <div className="space-y-4">
-                       <h4 className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] border-b pb-1 flex items-center gap-2"><Users size={12}/> Identificación y Período</h4>
+              {/* Cuerpo de la Ficha - Con Scroll Interno Optimizado */}
+              <div className="p-5 sm:p-7 overflow-y-auto custom-scrollbar flex-1 space-y-5 bg-white">
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
+                    {/* Bloque 1: Identidad */}
+                    <div className="space-y-3">
+                       <h4 className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] border-b border-slate-50 pb-1 flex items-center gap-2">
+                         <Users size={12}/> Identificación y Período
+                       </h4>
                        <div className="space-y-1">
                           <label className="text-[8px] font-black text-slate-500 uppercase ml-1">Colaborador Odoo</label>
-                          <select name="employee_id" defaultValue={selectedEmployee?.id} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-[11px] font-bold text-slate-700 outline-none">
+                          <select name="employee_id" defaultValue={selectedEmployee?.id} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-[11px] font-bold text-slate-700 outline-none focus:ring-2 focus:ring-odoo-primary/5">
                              {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
                           </select>
                        </div>
-                       <div className="grid grid-cols-2 gap-4">
+                       <div className="grid grid-cols-2 gap-3">
                           <div className="space-y-1">
-                             <label className="text-[8px] font-black text-slate-500 uppercase ml-1">Fecha Inicio</label>
+                             <label className="text-[8px] font-black text-slate-500 uppercase ml-1">Inicio</label>
                              <input type="date" name="start_date" required className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-[11px] font-bold text-slate-700 outline-none" defaultValue={new Date().toISOString().split('T')[0]}/>
                           </div>
                           <div className="space-y-1">
-                             <label className="text-[8px] font-black text-slate-500 uppercase ml-1">Fecha Fin</label>
+                             <label className="text-[8px] font-black text-slate-500 uppercase ml-1">Fin</label>
                              <input type="date" name="end_date" required className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-[11px] font-bold text-slate-700 outline-none" defaultValue={new Date().toISOString().split('T')[0]}/>
                           </div>
                        </div>
                     </div>
 
-                    {/* Sección 2 */}
-                    <div className="space-y-4">
-                       <h4 className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] border-b pb-1 flex items-center gap-2"><Clock size={12}/> Especificación de Jornada</h4>
-                       <div className="grid grid-cols-2 gap-4">
+                    {/* Bloque 2: Jornada */}
+                    <div className="space-y-3">
+                       <h4 className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] border-b border-slate-50 pb-1 flex items-center gap-2">
+                         <Clock size={12}/> Especificación de Jornada
+                       </h4>
+                       <div className="grid grid-cols-2 gap-3">
                           <div className="space-y-1">
-                            <label className="text-[8px] font-black text-slate-500 uppercase ml-1">Tipo de Turno Base</label>
-                            <select value={shiftType} onChange={(e) => setShiftType(e.target.value as any)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-[10px] font-black uppercase text-slate-700 outline-none">
+                            <label className="text-[8px] font-black text-slate-500 uppercase ml-1">Turno Base</label>
+                            <select value={shiftType} onChange={(e) => setShiftType(e.target.value as any)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-[10px] font-black uppercase text-slate-700 outline-none">
                                <option value="MAÑANA">☀ Turno Mañana</option>
                                <option value="TARDE">🌆 Turno Tarde</option>
                                <option value="COMPLETO">⚡ Turno Completo</option>
@@ -261,31 +277,47 @@ export const StaffManagement: React.FC<StaffManagementProps> = ({
                             </select>
                           </div>
                           <div className="space-y-1">
-                            <label className="text-[8px] font-black text-slate-500 uppercase ml-1">Sede de Trabajo / Botica</label>
-                            <select name="pos_id" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-[11px] font-bold text-slate-700 outline-none">
+                            <label className="text-[8px] font-black text-slate-500 uppercase ml-1">Sede / Botica</label>
+                            <select name="pos_id" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-[11px] font-bold text-slate-700 outline-none">
                                {posConfigs.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                             </select>
                           </div>
                        </div>
-                       <div className="grid grid-cols-2 gap-4">
+                       <div className="grid grid-cols-2 gap-3">
                           <div className="space-y-1">
-                             <label className="text-[8px] font-black text-slate-500 uppercase ml-1">Hora Entrada</label>
+                             <label className="text-[8px] font-black text-slate-500 uppercase ml-1">Entrada</label>
                              <input type="time" name="start" required className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-[11px] font-bold text-slate-700 outline-none" defaultValue="08:00"/>
                           </div>
                           <div className="space-y-1">
-                             <label className="text-[8px] font-black text-slate-500 uppercase ml-1">Hora Salida</label>
+                             <label className="text-[8px] font-black text-slate-500 uppercase ml-1">Salida</label>
                              <input type="time" name="end" required className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-[11px] font-bold text-slate-700 outline-none" defaultValue="14:00"/>
                           </div>
                        </div>
                     </div>
                  </div>
 
+                 {/* Bloque 3: Descansos */}
                  <div className="pt-4 border-t border-slate-100">
-                    <label className="text-[9px] font-black text-slate-800 uppercase tracking-widest flex items-center gap-2 mb-3"><Coffee size={12} className="text-odoo-primary"/> Días de Descanso Semanal Programados</label>
-                    <div className="grid grid-cols-7 gap-2">
+                    <label className="text-[9px] font-black text-slate-800 uppercase tracking-widest flex items-center gap-2 mb-3">
+                       <Coffee size={12} className="text-odoo-primary"/> Días de Descanso Semanal Programados
+                    </label>
+                    <div className="grid grid-cols-7 gap-1.5 sm:gap-2">
                        {DAYS_OF_WEEK.map(day => (
-                         <button key={day.value} type="button" onClick={() => toggleRestDay(day.value)} className={`relative py-3 rounded-xl text-[9px] font-black uppercase transition-all border flex flex-col items-center justify-center gap-1 ${restDays.includes(day.value) ? 'bg-slate-900 text-white border-slate-900 shadow-md' : 'bg-slate-50 text-slate-400 border-slate-200 hover:bg-white'}`}>
-                           {restDays.includes(day.value) && <div className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-emerald-500 text-white rounded-full flex items-center justify-center border-2 border-white"><Check size={8} strokeWidth={4}/></div>}
+                         <button 
+                          key={day.value} 
+                          type="button" 
+                          onClick={() => toggleRestDay(day.value)} 
+                          className={`relative py-2 sm:py-3 rounded-lg sm:rounded-xl text-[8px] sm:text-[9px] font-black uppercase transition-all border flex flex-col items-center justify-center gap-0.5 ${
+                            restDays.includes(day.value) 
+                            ? 'bg-slate-900 text-white border-slate-900 shadow-md' 
+                            : 'bg-slate-50 text-slate-400 border-slate-200 hover:bg-white'
+                          }`}
+                         >
+                           {restDays.includes(day.value) && (
+                              <div className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 text-white rounded-full flex items-center justify-center border border-white">
+                                <Check size={8} strokeWidth={4}/>
+                              </div>
+                           )}
                            <span className="opacity-60 text-[7px]">{day.short}</span>
                            <span className="hidden sm:inline">{day.label}</span>
                          </button>
@@ -294,9 +326,13 @@ export const StaffManagement: React.FC<StaffManagementProps> = ({
                  </div>
               </div>
 
-              {/* FOOTER FIJO PARA CONFIRMAR */}
-              <div className="px-8 py-5 bg-slate-50 border-t shrink-0 sticky bottom-0">
-                 <button type="submit" disabled={dbLoading} className="w-full bg-odoo-primary text-white py-4 rounded-2xl font-black uppercase text-[11px] tracking-[0.2em] shadow-xl flex items-center justify-center gap-3 hover:scale-[1.01] active:scale-[0.98] transition-all disabled:opacity-50">
+              {/* Footer de la Ficha - Siempre Visible y Fijo */}
+              <div className="px-6 sm:px-8 py-3 sm:py-5 bg-slate-50 border-t shrink-0 sticky bottom-0 z-10">
+                 <button 
+                  type="submit" 
+                  disabled={dbLoading} 
+                  className="w-full bg-odoo-primary text-white py-3.5 sm:py-4 rounded-xl sm:rounded-2xl font-black uppercase text-[10px] sm:text-[11px] tracking-[0.2em] shadow-lg flex items-center justify-center gap-3 hover:bg-[#5e3e55] active:scale-[0.98] transition-all disabled:opacity-50"
+                 >
                     {dbLoading ? <RefreshCw size={18} className="animate-spin"/> : <Check size={18}/>}
                     <span>{dbLoading ? 'Procesando Lote...' : 'Confirmar Registro de Horarios'}</span>
                  </button>

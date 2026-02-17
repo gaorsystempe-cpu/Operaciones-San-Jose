@@ -19,14 +19,14 @@ const DAYS_OF_WEEK = [
   { label: 'Sáb', value: 6 },
 ];
 
-// Temas de Color Profesionales (Diseño de Alta Legibilidad)
+// Temas de Color Profesionales (Diseño de Alta Legibilidad y Semántica Operativa)
 const SHIFT_THEMES: Record<string, { bg: string, text: string, border: string, icon: any, label: string, badge: string }> = {
   'mañana': { 
     bg: 'bg-amber-50', 
     text: 'text-amber-700', 
     border: 'border-amber-200', 
     icon: <Sun size={12} />,
-    label: 'MAÑANA',
+    label: 'TURNO MAÑANA',
     badge: 'bg-amber-500'
   },
   'tarde': { 
@@ -34,7 +34,7 @@ const SHIFT_THEMES: Record<string, { bg: string, text: string, border: string, i
     text: 'text-indigo-700', 
     border: 'border-indigo-200', 
     icon: <Moon size={12} />,
-    label: 'TARDE',
+    label: 'TURNO TARDE',
     badge: 'bg-indigo-500'
   },
   'completo': { 
@@ -56,9 +56,9 @@ const SHIFT_THEMES: Record<string, { bg: string, text: string, border: string, i
   'descanso': { 
     bg: 'bg-emerald-50', 
     text: 'text-emerald-700', 
-    border: 'border-emerald-200', 
+    border: 'border-emerald-300', 
     icon: <Coffee size={12} />,
-    label: 'LIBRE',
+    label: 'DESCANSO',
     badge: 'bg-emerald-500'
   }
 };
@@ -94,43 +94,45 @@ const EmployeeCalendar = ({
       <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={onClose} />
       <div className="relative w-full max-w-6xl bg-[#f8fafc] h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-500">
         
-        {/* Header de Ficha Profesional */}
-        <div className="bg-white px-10 py-8 border-b flex justify-between items-center shadow-sm">
-          <div className="flex items-center gap-6">
-            <div className="w-16 h-16 bg-gradient-to-br from-odoo-primary to-[#5e3e55] rounded-3xl flex items-center justify-center text-white font-black text-2xl shadow-xl shadow-odoo-primary/20">
-              {employee.name.charAt(0)}
-            </div>
-            <div>
-              <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tighter">{employee.name}</h3>
-              <p className="text-[10px] font-bold text-slate-400 uppercase mt-1 tracking-[0.3em] flex items-center gap-2">
-                <Calendar size={12} className="text-odoo-primary"/> Cronograma Operativo de Botica
-              </p>
-            </div>
-          </div>
-          <button onClick={onClose} className="p-4 hover:bg-red-50 hover:text-red-500 rounded-2xl transition-all text-slate-300">
-            <X size={28}/>
-          </button>
-        </div>
-
-        {/* Navegación y Legend */}
-        <div className="px-10 py-6 bg-white border-b flex flex-col lg:flex-row justify-between items-center gap-6">
-          <div className="flex items-center gap-4 bg-slate-50 p-2 rounded-2xl border border-slate-100">
-            <button onClick={() => setCurrentDate(new Date(daysInMonth.year, daysInMonth.month - 1, 1))} className="p-3 hover:bg-white hover:shadow-sm rounded-xl transition-all text-slate-400 hover:text-odoo-primary"><ChevronLeft size={20}/></button>
-            <h4 className="text-xs font-black text-slate-700 uppercase min-w-[200px] text-center tracking-widest">{monthName}</h4>
-            <button onClick={() => setCurrentDate(new Date(daysInMonth.year, daysInMonth.month + 1, 1))} className="p-3 hover:bg-white hover:shadow-sm rounded-xl transition-all text-slate-400 hover:text-odoo-primary"><ChevronRight size={20}/></button>
-          </div>
-          
-          <div className="flex flex-wrap justify-center gap-3">
-            {Object.entries(SHIFT_THEMES).map(([key, theme]) => (
-              <div key={key} className={`flex items-center gap-2 px-4 py-2 rounded-full border ${theme.bg} ${theme.border} ${theme.text} text-[9px] font-black uppercase tracking-tighter shadow-sm`}>
-                <span className={`w-2 h-2 rounded-full ${theme.badge}`}></span>
-                {theme.label}
+        {/* Header de Ficha Profesional con Leyenda */}
+        <div className="bg-white px-10 py-8 border-b flex flex-col gap-6 shadow-sm">
+          <div className="flex justify-between items-center">
+            <div className="flex items-center gap-6">
+              <div className="w-16 h-16 bg-gradient-to-br from-odoo-primary to-[#5e3e55] rounded-3xl flex items-center justify-center text-white font-black text-2xl shadow-xl shadow-odoo-primary/20">
+                {employee.name.charAt(0)}
               </div>
-            ))}
+              <div>
+                <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tighter">{employee.name}</h3>
+                <p className="text-[10px] font-bold text-slate-400 uppercase mt-1 tracking-[0.3em] flex items-center gap-2">
+                  <Calendar size={12} className="text-odoo-primary"/> Cronograma Detallado de Actividades
+                </p>
+              </div>
+            </div>
+            <button onClick={onClose} className="p-4 hover:bg-red-50 hover:text-red-500 rounded-2xl transition-all text-slate-300">
+              <X size={28}/>
+            </button>
+          </div>
+
+          {/* Nueva Barra de Leyenda para el Usuario */}
+          <div className="flex flex-wrap items-center justify-between gap-4 pt-6 border-t border-slate-50">
+            <div className="flex items-center gap-4 bg-slate-50 p-1.5 rounded-2xl border border-slate-100">
+              <button onClick={() => setCurrentDate(new Date(daysInMonth.year, daysInMonth.month - 1, 1))} className="p-3 hover:bg-white hover:shadow-sm rounded-xl transition-all text-slate-400 hover:text-odoo-primary"><ChevronLeft size={20}/></button>
+              <h4 className="text-xs font-black text-slate-700 uppercase min-w-[200px] text-center tracking-widest">{monthName}</h4>
+              <button onClick={() => setCurrentDate(new Date(daysInMonth.year, daysInMonth.month + 1, 1))} className="p-3 hover:bg-white hover:shadow-sm rounded-xl transition-all text-slate-400 hover:text-odoo-primary"><ChevronRight size={20}/></button>
+            </div>
+            
+            <div className="flex flex-wrap justify-center gap-3">
+              {Object.entries(SHIFT_THEMES).map(([key, theme]) => (
+                <div key={key} className={`flex items-center gap-2 px-4 py-2 rounded-xl border ${theme.bg} ${theme.border} ${theme.text} text-[9px] font-black uppercase tracking-tighter shadow-sm`}>
+                  <span className={`w-2.5 h-2.5 rounded-full ${theme.badge} shadow-sm`}></span>
+                  {theme.label}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 
-        {/* Grid Principal del Calendario */}
+        {/* Grid Principal del Calendario - Diseño Superior */}
         <div className="flex-1 p-10 overflow-y-auto custom-scrollbar">
           <div className="grid grid-cols-7 gap-4">
             {['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'].map(d => (
@@ -152,7 +154,7 @@ const EmployeeCalendar = ({
                   key={day} 
                   className={`relative min-h-[160px] bg-white rounded-[40px] p-5 border transition-all flex flex-col group ${
                     isToday ? 'ring-[6px] ring-odoo-primary/5 border-odoo-primary shadow-2xl' : 'border-slate-100 hover:border-slate-300 hover:shadow-xl'
-                  }`}
+                  } ${theme ? 'z-10' : 'z-0'}`}
                 >
                   <div className="flex justify-between items-start mb-4">
                     <span className={`text-sm font-black ${isToday ? 'text-odoo-primary' : 'text-slate-300'}`}>
@@ -160,14 +162,14 @@ const EmployeeCalendar = ({
                     </span>
                     {isToday && (
                       <div className="flex items-center gap-2">
-                         <span className="text-[8px] font-black text-odoo-primary uppercase">HOY</span>
+                         <span className="text-[8px] font-black text-odoo-primary uppercase">ACTUAL</span>
                          <div className="w-2 h-2 rounded-full bg-odoo-primary animate-ping"></div>
                       </div>
                     )}
                   </div>
 
                   {shift ? (
-                    <div className={`mt-auto p-4 rounded-[28px] border transition-all animate-fade shadow-sm ${theme?.bg} ${theme?.border} ${theme?.text}`}>
+                    <div className={`mt-auto p-4 rounded-[28px] border transition-all animate-fade shadow-sm hover:scale-[1.02] ${theme?.bg} ${theme?.border} ${theme?.text}`}>
                       <div className="flex items-center gap-2 mb-2">
                         <div className={`p-1.5 rounded-xl ${shift.shift_type === 'noche' ? 'bg-white/10' : 'bg-white/80 shadow-inner'}`}>
                           {theme?.icon}
@@ -185,12 +187,17 @@ const EmployeeCalendar = ({
                            </div>
                         </div>
                       ) : (
-                        <div className="text-[9px] font-black uppercase tracking-[0.1em] opacity-60 italic">Día de Descanso</div>
+                        <div className="flex flex-col gap-1">
+                           <div className="text-[9px] font-black uppercase tracking-[0.1em] opacity-80">Jornada Libre</div>
+                           <div className="w-full h-1 bg-emerald-500/20 rounded-full overflow-hidden">
+                              <div className="h-full bg-emerald-500 w-full"></div>
+                           </div>
+                        </div>
                       )}
                     </div>
                   ) : (
-                    <div className="mt-auto py-4 text-center border-t border-slate-50">
-                       <p className="text-[9px] font-black text-slate-200 uppercase tracking-[0.2em]">Pendiente</p>
+                    <div className="mt-auto py-4 text-center border-t border-slate-50 group-hover:border-slate-200 transition-colors">
+                       <p className="text-[9px] font-black text-slate-200 uppercase tracking-[0.2em] group-hover:text-slate-300">Pendiente</p>
                     </div>
                   )}
                 </div>
@@ -293,7 +300,7 @@ export const StaffManagement: React.FC<StaffManagementProps> = ({
   return (
     <div className="max-w-[1400px] mx-auto space-y-10 animate-fade pb-32">
       
-      {/* Dashboard Header */}
+      {/* Dashboard Header Corporativo */}
       <div className="bg-white p-10 border border-slate-200 rounded-[60px] shadow-sm flex flex-col lg:flex-row justify-between items-center gap-8 relative overflow-hidden">
         <div className="absolute top-0 right-0 p-12 opacity-[0.03] pointer-events-none">
            <Users size={240}/>

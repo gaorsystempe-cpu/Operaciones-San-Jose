@@ -4,7 +4,7 @@ import {
   Users, Calendar, Clock, Plus, X, RefreshCw, 
   ChevronLeft, ChevronRight, CalendarDays, Check, 
   MapPin, Sun, Moon, Zap, Coffee,
-  ShieldCheck, Briefcase
+  ShieldCheck, Briefcase, Info
 } from 'lucide-react';
 import { Employee, Shift } from '../types';
 import { shiftService } from '../services/supabaseService';
@@ -47,53 +47,54 @@ const EmployeeCalendar = ({
 
   return (
     <div className="fixed inset-0 z-[600] flex items-center justify-end animate-fade">
-      <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
       <div className="relative w-full max-w-4xl bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-500">
         
-        {/* Cabecera Compacta */}
-        <div className="bg-white px-6 py-3 border-b flex justify-between items-center shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-odoo-primary rounded-lg flex items-center justify-center text-white font-black text-sm">
+        {/* Cabecera Compacta Superior */}
+        <div className="bg-white px-6 py-4 border-b flex justify-between items-center shrink-0">
+          <div className="flex items-center gap-4">
+            <div className="w-10 h-10 bg-odoo-primary rounded-xl flex items-center justify-center text-white font-black shadow-lg">
               {employee.name.charAt(0)}
             </div>
             <div>
-              <h3 className="text-xs font-black text-slate-800 uppercase leading-none">{employee.name}</h3>
-              <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Calendario Operativo</p>
+              <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight leading-none">{employee.name}</h3>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-1">Horarios y Descansos</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 transition-colors">
-            <X size={18}/>
+          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full text-slate-400 transition-colors">
+            <X size={20}/>
           </button>
         </div>
 
-        {/* Navegación y Leyenda */}
-        <div className="px-6 py-2 bg-slate-50 border-b flex justify-between items-center shrink-0">
-          <div className="flex items-center gap-2 bg-white px-2 py-1 rounded-md border border-slate-200">
-            <button onClick={() => setCurrentDate(new Date(daysInMonth.year, daysInMonth.month - 1, 1))} className="text-slate-400 hover:text-odoo-primary"><ChevronLeft size={14}/></button>
-            <h4 className="text-[9px] font-black text-slate-700 uppercase min-w-[100px] text-center">{monthName}</h4>
-            <button onClick={() => setCurrentDate(new Date(daysInMonth.year, daysInMonth.month + 1, 1))} className="text-slate-400 hover:text-odoo-primary"><ChevronRight size={14}/></button>
+        {/* Barra de Navegación y Leyenda de Colores */}
+        <div className="px-6 py-3 bg-slate-50 border-b flex flex-wrap justify-between items-center gap-4 shrink-0">
+          <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-sm">
+            <button onClick={() => setCurrentDate(new Date(daysInMonth.year, daysInMonth.month - 1, 1))} className="text-slate-400 hover:text-odoo-primary p-1"><ChevronLeft size={16}/></button>
+            <h4 className="text-[10px] font-black text-slate-700 uppercase min-w-[120px] text-center tracking-widest">{monthName}</h4>
+            <button onClick={() => setCurrentDate(new Date(daysInMonth.year, daysInMonth.month + 1, 1))} className="text-slate-400 hover:text-odoo-primary p-1"><ChevronRight size={16}/></button>
           </div>
-          <div className="flex gap-3">
-             <div className="flex items-center gap-1.5">
-                <div className="w-3 h-3 rounded bg-emerald-100 border border-emerald-300"></div>
-                <span className="text-[8px] font-black text-slate-500 uppercase">Trabajo</span>
+          
+          <div className="flex gap-4">
+             <div className="flex items-center gap-2">
+                <div className="w-4 h-4 rounded bg-emerald-500 border border-emerald-600 shadow-sm"></div>
+                <span className="text-[9px] font-black text-slate-600 uppercase tracking-tighter">TRABAJO</span>
              </div>
-             <div className="flex items-center gap-1.5">
-                <div className="w-3 h-3 rounded bg-slate-200 border border-slate-300"></div>
-                <span className="text-[8px] font-black text-slate-500 uppercase">Descanso</span>
+             <div className="flex items-center gap-2">
+                <div className="w-4 h-4 rounded bg-slate-300 border border-slate-400 shadow-sm"></div>
+                <span className="text-[9px] font-black text-slate-600 uppercase tracking-tighter">DESCANSO</span>
              </div>
           </div>
         </div>
 
-        {/* Grid de Calendario Miniaturizado */}
-        <div className="flex-1 p-4 bg-slate-50/50 overflow-hidden">
-          <div className="grid grid-cols-7 gap-1 h-full max-h-[calc(100vh-180px)]">
+        {/* Grid de Calendario de Alta Densidad */}
+        <div className="flex-1 p-4 bg-slate-100/50 overflow-hidden">
+          <div className="grid grid-cols-7 gap-1 h-full max-h-[calc(100vh-200px)]">
             {['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'].map(d => (
-              <div key={d} className="text-center text-[8px] font-black text-slate-300 uppercase pb-1">{d}</div>
+              <div key={d} className="text-center text-[9px] font-black text-slate-400 uppercase tracking-widest pb-1">{d}</div>
             ))}
             
             {Array.from({ length: daysInMonth.firstDay }).map((_, i) => (
-              <div key={`empty-${i}`} className="bg-transparent rounded-lg border border-transparent" />
+              <div key={`empty-${i}`} className="bg-white/20 rounded-lg border border-transparent" />
             ))}
 
             {Array.from({ length: daysInMonth.days }).map((_, i) => {
@@ -107,33 +108,50 @@ const EmployeeCalendar = ({
               return (
                 <div 
                   key={day} 
-                  className={`relative rounded-lg p-2 border transition-all flex flex-col justify-between ${
-                    isToday ? 'ring-2 ring-odoo-primary border-odoo-primary bg-white shadow-md z-10' : 
-                    isWork ? 'bg-emerald-100 border-emerald-200' :
-                    isRest ? 'bg-slate-200 border-slate-300 opacity-80' :
-                    'bg-white border-slate-100'
+                  className={`relative rounded-xl p-2 border transition-all flex flex-col justify-between overflow-hidden ${
+                    isToday ? 'ring-4 ring-odoo-primary/20 border-odoo-primary bg-white shadow-xl z-10 scale-[1.02]' : 
+                    isWork ? 'bg-emerald-500 border-emerald-600 text-white shadow-sm' :
+                    isRest ? 'bg-slate-300 border-slate-400 text-slate-700 opacity-90' :
+                    'bg-white border-slate-200 text-slate-300'
                   }`}
                 >
                   <div className="flex justify-between items-start">
-                    <span className={`text-[10px] font-black ${isToday ? 'text-odoo-primary' : (isWork ? 'text-emerald-900' : (isRest ? 'text-slate-600' : 'text-slate-300'))}`}>
+                    <span className={`text-xs font-black ${isToday ? 'text-odoo-primary' : ''}`}>
                       {day}
                     </span>
-                    {isToday && <span className="text-[6px] font-black bg-odoo-primary text-white px-1 rounded-sm uppercase">Hoy</span>}
+                    {isToday && <span className="text-[7px] font-black bg-odoo-primary text-white px-1.5 py-0.5 rounded-full uppercase tracking-tighter shadow-sm">Hoy</span>}
                   </div>
 
-                  {shift && (
-                    <div className="mt-1">
-                      <p className={`text-[7px] font-black uppercase truncate ${isWork ? 'text-emerald-800' : 'text-slate-500'}`}>
-                        {shift.shift_type === 'descanso' ? 'LIBRE' : shift.shift_type}
-                      </p>
+                  {shift ? (
+                    <div className="mt-1 space-y-1">
+                      {/* ETIQUETA DE ESTADO GRANDE */}
+                      <div className={`text-[9px] font-black uppercase tracking-tighter text-center py-0.5 rounded-md ${
+                        isWork ? 'bg-white/20' : 'bg-black/5'
+                      }`}>
+                        {isRest ? 'DESCANSO' : 'TRABAJO'}
+                      </div>
+                      
                       {isWork && (
-                        <div className="flex flex-col gap-0.5 mt-0.5">
-                           <div className="flex items-center gap-0.5 text-[8px] font-bold text-emerald-900">
-                             <Clock size={8}/> {shift.start_time.slice(0,5)}
+                        <div className="flex flex-col gap-0.5">
+                           <div className="flex items-center gap-1 text-[10px] font-bold">
+                             <Clock size={10} strokeWidth={3}/> {shift.start_time.slice(0,5)}
                            </div>
-                           <p className="text-[6px] font-bold text-emerald-700/60 uppercase truncate">{shift.pos_name}</p>
+                           <p className="text-[7px] font-black uppercase opacity-80 truncate bg-black/10 px-1 rounded">
+                             {shift.shift_type} • {shift.pos_name}
+                           </p>
                         </div>
                       )}
+                      
+                      {isRest && (
+                        <div className="flex flex-col items-center opacity-40 py-1">
+                          <Coffee size={14} />
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex-1 flex flex-col items-center justify-center opacity-10">
+                       <Briefcase size={12} />
+                       <span className="text-[7px] font-black mt-1">S/P</span>
                     </div>
                   )}
                 </div>
@@ -142,11 +160,17 @@ const EmployeeCalendar = ({
           </div>
         </div>
         
-        <div className="px-6 py-3 border-t bg-white flex justify-between items-center shrink-0">
-          <p className="text-[8px] font-black text-slate-300 uppercase tracking-widest">San José Ops Hub 2026</p>
-          <div className="flex items-center gap-1.5 opacity-50">
-             <ShieldCheck size={12} className="text-emerald-500"/>
-             <span className="text-[8px] font-black text-slate-500 uppercase">Verificado</span>
+        {/* Footer Informativo */}
+        <div className="px-6 py-4 border-t bg-white flex justify-between items-center shrink-0">
+          <div className="flex items-center gap-2">
+            <Info size={14} className="text-odoo-primary" />
+            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+              Días en <span className="text-emerald-600">Verde</span> = Trabajo | Días en <span className="text-slate-500">Gris</span> = Descanso
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+             <ShieldCheck size={14} className="text-emerald-500"/>
+             <span className="text-[9px] font-black text-slate-500 uppercase">Ops Hub 2026</span>
           </div>
         </div>
       </div>
@@ -242,30 +266,30 @@ export const StaffManagement: React.FC<StaffManagementProps> = ({
   };
 
   return (
-    <div className="max-w-[1200px] mx-auto space-y-6 animate-fade pb-32">
+    <div className="max-w-[1400px] mx-auto space-y-6 animate-fade pb-32">
       
-      {/* Header Compacto */}
-      <div className="bg-white p-6 border border-slate-200 rounded-3xl shadow-sm flex flex-col md:flex-row justify-between items-center gap-4 relative">
-        <div className="flex items-center gap-4">
-          <div className="p-3 bg-odoo-primary text-white rounded-xl shadow-lg">
-            <Users size={24}/>
+      {/* Header Corporativo Dashboard */}
+      <div className="bg-white p-8 border border-slate-200 rounded-[32px] shadow-sm flex flex-col md:flex-row justify-between items-center gap-6 relative overflow-hidden">
+        <div className="flex items-center gap-6 z-10">
+          <div className="p-4 bg-odoo-primary text-white rounded-2xl shadow-xl shadow-odoo-primary/20">
+            <Users size={28}/>
           </div>
           <div>
-            <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight">Personal & Horarios</h2>
-            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1 flex items-center gap-2">
-               <ShieldCheck size={12} className="text-emerald-500"/> Planificación de Staff
+            <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight">Staff & Cronograma</h2>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-1 flex items-center gap-2">
+               <ShieldCheck size={14} className="text-emerald-500"/> Gestión de Turnos San José
             </p>
           </div>
         </div>
 
-        <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
-           <button onClick={() => setView('roster')} className={`px-6 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${view === 'roster' ? 'bg-white text-odoo-primary shadow-sm' : 'text-slate-400'}`}>Fichas</button>
-           <button onClick={() => setView('global')} className={`px-6 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${view === 'global' ? 'bg-white text-odoo-primary shadow-sm' : 'text-slate-400'}`}>Auditoría</button>
+        <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200 z-10">
+           <button onClick={() => setView('roster')} className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${view === 'roster' ? 'bg-white text-odoo-primary shadow-sm border border-slate-100' : 'text-slate-400 hover:text-slate-600'}`}>Fichas Staff</button>
+           <button onClick={() => setView('global')} className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${view === 'global' ? 'bg-white text-odoo-primary shadow-sm border border-slate-100' : 'text-slate-400 hover:text-slate-600'}`}>Consolidado</button>
         </div>
       </div>
 
       {view === 'roster' && (
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">
           {employees.map(emp => {
             const todayShift = getEmployeeStatus(emp.id);
             const isWorking = todayShift && todayShift.shift_type !== 'descanso';
@@ -274,39 +298,41 @@ export const StaffManagement: React.FC<StaffManagementProps> = ({
             return (
               <div 
                 key={emp.id} 
-                className="bg-white border border-slate-200 rounded-[28px] p-6 hover:border-odoo-primary/30 transition-all shadow-sm group relative flex flex-col items-center text-center"
+                className="bg-white border border-slate-200 rounded-[32px] p-6 hover:border-odoo-primary/40 transition-all shadow-sm group relative overflow-hidden flex flex-col items-center text-center"
               >
-                <div className="w-16 h-16 bg-slate-50 rounded-xl flex items-center justify-center text-2xl font-black text-odoo-primary mb-4 shadow-inner group-hover:bg-odoo-primary group-hover:text-white transition-all">
+                <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center text-2xl font-black text-odoo-primary mb-4 shadow-inner group-hover:bg-odoo-primary group-hover:text-white transition-all duration-300">
                   {emp.name.charAt(0)}
                 </div>
                 
-                <h3 className="text-xs font-black text-slate-800 uppercase line-clamp-1 mb-0.5">{emp.name}</h3>
-                <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-6">{emp.job_title || 'COLABORADOR'}</p>
+                <h3 className="text-xs font-black text-slate-800 uppercase line-clamp-1 mb-1 tracking-tight">{emp.name}</h3>
+                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-6">{emp.job_title || 'COLABORADOR'}</p>
                 
-                {/* Status Hoy Binario */}
-                <div className={`w-full p-3 rounded-xl border transition-all ${
-                  isWorking ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 
-                  isResting ? 'bg-slate-100 border-slate-200 text-slate-500' :
-                  'bg-slate-50 opacity-40'
+                {/* Status Hoy Resaltado */}
+                <div className={`w-full p-4 rounded-2xl border transition-all ${
+                  isWorking ? 'bg-emerald-500 border-emerald-600 text-white' : 
+                  isResting ? 'bg-slate-300 border-slate-400 text-slate-700' :
+                  'bg-slate-50 border-slate-100 opacity-40'
                 }`}>
-                  <span className="text-[7px] font-black uppercase tracking-widest opacity-50 block mb-1">Hoy</span>
+                  <span className={`text-[8px] font-black uppercase tracking-widest block mb-1 ${isWorking ? 'text-white/70' : 'text-slate-500'}`}>Estado Hoy</span>
                   {todayShift ? (
-                    <div className="flex items-center justify-center gap-1">
-                       {isWorking ? <Sun size={10}/> : <Coffee size={10}/>}
-                       <span className="text-[9px] font-black uppercase">{isWorking ? todayShift.shift_type : 'DESCANSO'}</span>
+                    <div className="flex items-center justify-center gap-2">
+                       {isWorking ? <Sun size={14} className="animate-spin-slow"/> : <Coffee size={14}/>}
+                       <span className="text-[11px] font-black uppercase tracking-tighter">
+                         {isWorking ? todayShift.shift_type : 'DESCANSO'}
+                       </span>
                     </div>
                   ) : (
-                    <span className="text-[9px] font-bold uppercase opacity-20">---</span>
+                    <span className="text-[10px] font-bold uppercase opacity-30 italic">Sin Programar</span>
                   )}
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 w-full mt-6">
-                  <button onClick={() => setViewCalendarEmp(emp)} className="bg-white text-slate-600 py-2.5 rounded-lg text-[8px] font-black uppercase border border-slate-200 hover:bg-slate-50 transition-all flex items-center justify-center gap-2">
-                     <Calendar size={10}/> Ver Mes
+                <div className="grid grid-cols-2 gap-3 w-full mt-6">
+                  <button onClick={() => setViewCalendarEmp(emp)} className="bg-white text-slate-600 py-3 rounded-xl text-[9px] font-black uppercase border border-slate-200 hover:bg-slate-50 transition-all flex items-center justify-center gap-2">
+                     <Calendar size={14}/> Ver Mes
                   </button>
                   {isAdmin && (
-                    <button onClick={() => { setSelectedEmployee(emp); setShowAddShift(true); }} className="bg-odoo-primary text-white py-2.5 rounded-lg text-[8px] font-black uppercase shadow-lg shadow-odoo-primary/10 hover:scale-[1.02] transition-all">
-                      Programar
+                    <button onClick={() => { setSelectedEmployee(emp); setShowAddShift(true); }} className="bg-odoo-primary text-white py-3 rounded-xl text-[9px] font-black uppercase shadow-lg shadow-odoo-primary/10 hover:scale-[1.02] transition-all">
+                      Asignar
                     </button>
                   )}
                 </div>
@@ -318,40 +344,40 @@ export const StaffManagement: React.FC<StaffManagementProps> = ({
 
       {view === 'global' && (
         <div className="bg-white border border-slate-200 rounded-[32px] overflow-hidden shadow-sm">
-           <div className="px-8 py-4 border-b bg-slate-50 flex justify-between items-center">
-              <div className="flex items-center gap-3">
-                 <Clock size={20} className="text-odoo-primary"/>
-                 <h3 className="text-xs font-black text-slate-600 uppercase tracking-widest">Consolidado General</h3>
+           <div className="px-10 py-6 border-b bg-slate-50 flex justify-between items-center">
+              <div className="flex items-center gap-4">
+                 <Clock size={24} className="text-odoo-primary"/>
+                 <h3 className="text-sm font-black text-slate-600 uppercase tracking-widest leading-none">Control General de Turnos</h3>
               </div>
-              {isAdmin && <button onClick={() => { setSelectedEmployee(null); setShowAddShift(true); }} className="bg-odoo-primary text-white py-2.5 px-6 rounded-xl text-[9px] font-black uppercase flex items-center gap-2 hover:scale-[1.02] transition-all"><Plus size={16}/> Nueva Carga</button>}
+              {isAdmin && <button onClick={() => { setSelectedEmployee(null); setShowAddShift(true); }} className="bg-odoo-primary text-white py-3.5 px-8 rounded-2xl text-[10px] font-black uppercase flex items-center gap-3 shadow-lg shadow-odoo-primary/20 hover:scale-[1.02] transition-all"><Plus size={18}/> Nueva Programación</button>}
            </div>
-           <div className="overflow-x-auto">
+           <div className="overflow-x-auto custom-scrollbar">
               <table className="w-full text-left">
-                 <thead className="bg-slate-50 text-[8px] font-black text-slate-400 uppercase border-b sticky top-0 z-10">
+                 <thead className="bg-slate-50 text-[9px] font-black text-slate-400 uppercase border-b sticky top-0 z-10">
                     <tr>
-                      <th className="px-8 py-4">Staff</th>
-                      <th className="px-8 py-4">Sede</th>
-                      <th className="px-8 py-4">Fecha</th>
-                      <th className="px-8 py-4 text-center">Tipo</th>
-                      <th className="px-8 py-4 text-right">Acción</th>
+                      <th className="px-10 py-6">Staff</th>
+                      <th className="px-10 py-6">Punto de Venta</th>
+                      <th className="px-10 py-6">Fecha</th>
+                      <th className="px-10 py-6 text-center">Tipo de Turno</th>
+                      <th className="px-10 py-6 text-right"></th>
                     </tr>
                  </thead>
                  <tbody className="divide-y divide-slate-100 bg-white">
                     {shifts.map(shift => {
                        const isRest = shift.shift_type === 'descanso';
                        return (
-                        <tr key={shift.id} className="hover:bg-slate-50 transition-colors">
-                           <td className="px-8 py-3.5 font-black text-slate-800 uppercase text-[10px]">{shift.employee_name}</td>
-                           <td className="px-8 py-3.5 font-bold text-slate-500 uppercase text-[9px]">{shift.pos_name}</td>
-                           <td className="px-8 py-3.5 font-bold text-slate-600 uppercase text-[9px]">
-                              {new Date(shift.date + 'T00:00:00').toLocaleDateString('es-PE', {day: '2-digit', month: 'short'})}
+                        <tr key={shift.id} className="hover:bg-slate-50/50 transition-colors group">
+                           <td className="px-10 py-5 font-black text-slate-800 uppercase text-[11px]">{shift.employee_name}</td>
+                           <td className="px-10 py-5 font-bold text-slate-500 uppercase text-[10px]">{shift.pos_name}</td>
+                           <td className="px-10 py-5 font-bold text-slate-600 uppercase text-[10px]">
+                              {new Date(shift.date + 'T00:00:00').toLocaleDateString('es-PE', {day: '2-digit', month: 'short', year: 'numeric'})}
                            </td>
-                           <td className="px-8 py-3.5 text-center">
-                              <span className={`text-[8px] font-black px-2 py-1 rounded-full uppercase border ${isRest ? 'bg-slate-100 text-slate-500 border-slate-200' : 'bg-emerald-50 text-emerald-800 border-emerald-200'}`}>
+                           <td className="px-10 py-5 text-center">
+                              <span className={`text-[9px] font-black px-4 py-2 rounded-full uppercase border shadow-sm ${isRest ? 'bg-slate-100 text-slate-500 border-slate-200' : 'bg-emerald-500 text-white border-emerald-600'}`}>
                                  {shift.shift_type.toUpperCase()}
                               </span>
                            </td>
-                           <td className="px-8 py-3.5 text-right">{isAdmin && <button onClick={() => { if(confirm("¿Eliminar?")) shiftService.deleteShift(shift.id).then(loadShifts); }} className="p-1.5 text-slate-200 hover:text-red-500"><X size={16}/></button>}</td>
+                           <td className="px-10 py-5 text-right">{isAdmin && <button onClick={() => { if(confirm("¿Eliminar turno?")) shiftService.deleteShift(shift.id).then(loadShifts); }} className="p-2 text-slate-200 hover:text-red-500 transition-all"><X size={18}/></button>}</td>
                         </tr>
                        );
                     })}
@@ -361,7 +387,7 @@ export const StaffManagement: React.FC<StaffManagementProps> = ({
         </div>
       )}
 
-      {/* CALENDARIO INDIVIDUAL MINIATURIZADO */}
+      {/* VISTA CALENDARIO OPERATIVO (Miniaturizado y Coloreado) */}
       {viewCalendarEmp && (
         <EmployeeCalendar 
           employee={viewCalendarEmp} 
@@ -370,104 +396,104 @@ export const StaffManagement: React.FC<StaffManagementProps> = ({
         />
       )}
 
-      {/* MODAL DE PROGRAMACIÓN COMPACTO */}
+      {/* MODAL DE CARGA MASIVA DE TURNOS */}
       {showAddShift && (
-        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade">
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-xl animate-fade">
            <form 
             onSubmit={handleAddShiftRange} 
-            className="relative w-full max-w-[440px] bg-white rounded-[40px] shadow-2xl flex flex-col overflow-hidden"
+            className="relative w-full max-w-[480px] bg-white rounded-[40px] shadow-2xl flex flex-col overflow-hidden"
            >
-              <div className="px-8 py-6 bg-slate-50 border-b flex justify-between items-center shrink-0">
-                 <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 bg-odoo-primary rounded-xl flex items-center justify-center text-white shadow-lg"><CalendarDays size={20}/></div>
+              <div className="px-10 py-8 bg-slate-50 border-b flex justify-between items-center shrink-0">
+                 <div className="flex items-center gap-5">
+                    <div className="w-12 h-12 bg-odoo-primary rounded-xl flex items-center justify-center text-white shadow-lg shadow-odoo-primary/20"><CalendarDays size={24}/></div>
                     <div>
-                      <h3 className="text-lg font-black uppercase text-slate-800 tracking-tight">Carga de Horario</h3>
-                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Gestión de Turnos</p>
+                      <h3 className="text-xl font-black uppercase text-slate-800 tracking-tight leading-none">Programar Rol</h3>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Carga Masiva de Horarios</p>
                     </div>
                  </div>
-                 <button type="button" onClick={() => setShowAddShift(false)} className="w-8 h-8 flex items-center justify-center bg-white rounded-lg shadow-sm text-slate-300 hover:text-red-500 border border-slate-100"><X size={20}/></button>
+                 <button type="button" onClick={() => setShowAddShift(false)} className="w-10 h-10 flex items-center justify-center bg-white rounded-xl shadow-sm text-slate-300 hover:text-red-500 border border-slate-100 transition-all"><X size={24}/></button>
               </div>
               
-              <div className="p-8 space-y-5 bg-white overflow-y-auto custom-scrollbar max-h-[60vh]">
-                 <div className="space-y-1.5">
-                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Staff</label>
-                    <select name="employee_id" defaultValue={selectedEmployee?.id} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-black text-slate-700 outline-none">
+              <div className="p-10 space-y-6 bg-white overflow-y-auto custom-scrollbar max-h-[65vh]">
+                 <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Seleccionar Colaborador</label>
+                    <select name="employee_id" defaultValue={selectedEmployee?.id} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-5 py-4 text-xs font-black text-slate-700 outline-none focus:border-odoo-primary/30">
                        {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
                     </select>
                  </div>
 
-                 <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                       <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Inicio</label>
-                       <input type="date" name="start_date" required className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-black text-slate-700 outline-none" defaultValue={new Date().toISOString().split('T')[0]}/>
+                 <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Fecha Inicio</label>
+                       <input type="date" name="start_date" required className="w-full bg-slate-50 border border-slate-200 rounded-xl px-5 py-4 text-xs font-black text-slate-700 outline-none" defaultValue={new Date().toISOString().split('T')[0]}/>
                     </div>
-                    <div className="space-y-1.5">
-                       <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Fin</label>
-                       <input type="date" name="end_date" required className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-black text-slate-700 outline-none" defaultValue={new Date().toISOString().split('T')[0]}/>
+                    <div className="space-y-2">
+                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Fecha Fin</label>
+                       <input type="date" name="end_date" required className="w-full bg-slate-50 border border-slate-200 rounded-xl px-5 py-4 text-xs font-black text-slate-700 outline-none" defaultValue={new Date().toISOString().split('T')[0]}/>
                     </div>
                  </div>
 
-                 <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Turno</label>
-                      <select value={shiftType} onChange={(e) => setShiftType(e.target.value as any)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-[9px] font-black uppercase text-slate-700 outline-none cursor-pointer">
+                 <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Turno Base</label>
+                      <select value={shiftType} onChange={(e) => setShiftType(e.target.value as any)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-5 py-4 text-[10px] font-black uppercase text-slate-700 outline-none cursor-pointer">
                          <option value="mañana">☀ MAÑANA</option>
                          <option value="tarde">🌆 TARDE</option>
                          <option value="completo">⚡ FULL DAY</option>
                          <option value="noche">🌙 NOCHE</option>
                       </select>
                     </div>
-                    <div className="space-y-1.5">
-                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Sede</label>
-                      <select name="pos_id" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-[9px] font-black uppercase text-slate-700 outline-none cursor-pointer">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Ubicación</label>
+                      <select name="pos_id" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-4 text-[10px] font-black uppercase text-slate-700 outline-none cursor-pointer">
                          {posConfigs.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                       </select>
                     </div>
                  </div>
 
-                 <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                       <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Entrada</label>
-                       <input type="time" name="start" required className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-black text-slate-700 outline-none" defaultValue="08:00"/>
+                 <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">H. Entrada</label>
+                       <input type="time" name="start" required className="w-full bg-slate-50 border border-slate-200 rounded-xl px-5 py-4 text-xs font-black text-slate-700 outline-none" defaultValue="08:00"/>
                     </div>
-                    <div className="space-y-1.5">
-                       <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Salida</label>
-                       <input type="time" name="end" required className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-black text-slate-700 outline-none" defaultValue="14:00"/>
+                    <div className="space-y-2">
+                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">H. Salida</label>
+                       <input type="time" name="end" required className="w-full bg-slate-50 border border-slate-200 rounded-xl px-5 py-4 text-xs font-black text-slate-700 outline-none" defaultValue="21:00"/>
                     </div>
                  </div>
 
-                 <div className="pt-4 border-t border-slate-100">
-                    <label className="text-[9px] font-black text-slate-800 uppercase tracking-widest flex items-center gap-2 mb-3">
-                       <Coffee size={14} className="text-emerald-500"/> Definir Descansos Semanales
+                 <div className="pt-6 border-t border-slate-100">
+                    <label className="text-[10px] font-black text-slate-800 uppercase tracking-[0.2em] flex items-center gap-2 mb-4">
+                       <Coffee size={18} className="text-emerald-500"/> Definir Descansos Semanales
                     </label>
-                    <div className="grid grid-cols-7 gap-1.5">
+                    <div className="grid grid-cols-7 gap-2">
                        {DAYS_OF_WEEK.map(day => (
                          <button 
                             key={day.value} 
                             type="button" 
                             onClick={() => toggleRestDay(day.value)} 
-                            className={`py-3 rounded-lg text-[8px] font-black uppercase transition-all border flex flex-col items-center justify-center gap-1 ${
+                            className={`relative py-4 rounded-xl text-[9px] font-black uppercase transition-all border flex flex-col items-center justify-center gap-1 ${
                               restDays.includes(day.value) 
-                              ? 'bg-emerald-500 text-white border-emerald-500 shadow-lg scale-95' 
+                              ? 'bg-emerald-500 text-white border-emerald-500 shadow-lg shadow-emerald-200 scale-95' 
                               : 'bg-slate-50 text-slate-400 border-slate-100 hover:bg-white'
                             }`}
                          >
                            {day.label}
-                           {restDays.includes(day.value) && <div className="w-1 h-1 bg-white rounded-full"></div>}
+                           {restDays.includes(day.value) && <div className="w-1 h-1 bg-white rounded-full animate-pulse"></div>}
                          </button>
                        ))}
                     </div>
                  </div>
               </div>
 
-              <div className="px-8 py-6 bg-slate-50 border-t">
+              <div className="px-10 py-8 bg-slate-50 border-t">
                  <button 
                   type="submit" 
                   disabled={dbLoading} 
-                  className="w-full bg-odoo-primary text-white py-4 rounded-xl font-black uppercase text-[10px] tracking-widest shadow-xl shadow-odoo-primary/20 flex items-center justify-center gap-3 hover:bg-[#5e3e55] active:scale-[0.98] transition-all disabled:opacity-50"
+                  className="w-full bg-odoo-primary text-white py-5 rounded-[20px] font-black uppercase text-xs tracking-widest shadow-xl shadow-odoo-primary/20 flex items-center justify-center gap-4 hover:bg-[#5e3e55] active:scale-[0.98] transition-all disabled:opacity-50"
                  >
-                    {dbLoading ? <RefreshCw size={18} className="animate-spin"/> : <Check size={18}/>}
-                    <span>{dbLoading ? 'Guardando...' : 'Publicar Horario'}</span>
+                    {dbLoading ? <RefreshCw size={24} className="animate-spin"/> : <Check size={24}/>}
+                    <span>{dbLoading ? 'Guardando...' : 'Publicar Cronograma'}</span>
                  </button>
               </div>
            </form>

@@ -51,7 +51,7 @@ export interface Shift {
   pos_id: number;
   pos_name: string;
   date: string;
-  shift_type: 'mañana' | 'tarde' | 'completo' | 'noche' | 'descanso';
+  shift_type: 'MAÑANA' | 'TARDE' | 'COMPLETO' | 'NOCHE' | 'DESCANSO';
   start_time: string;
   end_time: string;
   status: 'confirmed' | 'pending';

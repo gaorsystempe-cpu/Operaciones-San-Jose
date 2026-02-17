@@ -40,6 +40,7 @@ const EmployeeCalendar = ({
 
   const monthName = currentDate.toLocaleString('es-PE', { month: 'long', year: 'numeric' });
 
+  // Función de búsqueda robusta por fecha
   const getShiftForDay = (day: number) => {
     const dateStr = `${daysInMonth.year}-${String(daysInMonth.month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     return shifts.find(s => s.date === dateStr);
@@ -111,23 +112,19 @@ const EmployeeCalendar = ({
                 <div 
                   key={day} 
                   className={`relative aspect-square rounded-2xl p-2 border-2 transition-all flex flex-col items-center justify-center text-center overflow-hidden shadow-sm ${
-                    // Si está programado, mostramos el color sólido sea hoy o cualquier día
                     isWork ? 'bg-emerald-600 border-emerald-700 text-white' :
                     isRest ? 'bg-slate-400 border-slate-500 text-white' :
                     'bg-white border-slate-200 text-slate-300 border-dashed'
                   } ${
-                    // Si es HOY, agregamos un borde especial pero MANTENEMOS el fondo
                     isToday ? 'ring-4 ring-odoo-primary/40 scale-[1.05] z-10 shadow-xl' : ''
                   }`}
                 >
-                  {/* Número de día */}
                   <div className="absolute top-1.5 left-2.5">
                     <span className={`text-[11px] font-black ${isWork || isRest ? 'text-white/60' : (isToday ? 'text-odoo-primary' : 'text-slate-300')}`}>
                       {day}
                     </span>
                   </div>
 
-                  {/* Etiqueta HOY discreta */}
                   {isToday && (
                     <div className="absolute top-1.5 right-2">
                        <span className="text-[7px] font-black bg-white text-odoo-primary px-1.5 py-0.5 rounded-full uppercase tracking-tighter shadow-md">HOY</span>
@@ -136,7 +133,6 @@ const EmployeeCalendar = ({
 
                   {shift ? (
                     <div className="flex flex-col items-center w-full px-1">
-                      {/* ESTADO PROGRAMADO - SIEMPRE VISIBLE */}
                       <span className="text-[10px] font-black uppercase tracking-[0.1em] drop-shadow-sm">
                         {isRest ? 'DESCANSO' : 'TRABAJO'}
                       </span>
@@ -170,7 +166,6 @@ const EmployeeCalendar = ({
           </div>
         </div>
         
-        {/* Footer */}
         <div className="px-6 py-4 border-t bg-white flex justify-between items-center shrink-0">
           <div className="flex items-center gap-3">
             <Info size={16} className="text-odoo-primary" />
@@ -184,7 +179,6 @@ const EmployeeCalendar = ({
   );
 };
 
-// ... (Resto del componente StaffManagement permanece igual)
 interface StaffManagementProps {
   isAdmin: boolean;
   employees: Employee[];
@@ -221,7 +215,8 @@ export const StaffManagement: React.FC<StaffManagementProps> = ({
 
   const getEmployeeStatus = (empId: number) => {
     const today = new Date().toISOString().split('T')[0];
-    return shifts.find(s => s.employee_id === empId && s.date === today);
+    // Normalizamos comparación a número
+    return shifts.find(s => Number(s.employee_id) === Number(empId) && s.date === today);
   };
 
   const toggleRestDay = (day: number) => {
@@ -264,7 +259,7 @@ export const StaffManagement: React.FC<StaffManagementProps> = ({
     try {
       await shiftService.createShifts(shiftBatch);
       setShowAddShift(false);
-      loadShifts();
+      await loadShifts();
     } catch (e: any) {
       alert(e.message);
     } finally {
@@ -274,11 +269,8 @@ export const StaffManagement: React.FC<StaffManagementProps> = ({
 
   return (
     <div className="max-w-[1400px] mx-auto space-y-6 animate-fade pb-32">
-      
-      {/* Header Corporativo Dashboard */}
       <div className="bg-white p-8 border border-slate-200 rounded-[32px] shadow-sm flex flex-col md:flex-row justify-between items-center gap-6 relative overflow-hidden group">
         <div className="absolute top-0 right-0 w-64 h-64 bg-odoo-primary/5 rounded-full -mr-20 -mt-20 blur-3xl group-hover:bg-odoo-primary/10 transition-all duration-700"></div>
-        
         <div className="flex items-center gap-6 z-10">
           <div className="p-4 bg-odoo-primary text-white rounded-2xl shadow-xl shadow-odoo-primary/20">
             <Users size={28}/>
@@ -290,7 +282,6 @@ export const StaffManagement: React.FC<StaffManagementProps> = ({
             </p>
           </div>
         </div>
-
         <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200 z-10">
            <button onClick={() => setView('roster')} className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${view === 'roster' ? 'bg-white text-odoo-primary shadow-sm border border-slate-100' : 'text-slate-400 hover:text-slate-600'}`}>Fichas Staff</button>
            <button onClick={() => setView('global')} className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${view === 'global' ? 'bg-white text-odoo-primary shadow-sm border border-slate-100' : 'text-slate-400 hover:text-slate-600'}`}>Consolidado</button>
@@ -303,38 +294,22 @@ export const StaffManagement: React.FC<StaffManagementProps> = ({
             const todayShift = getEmployeeStatus(emp.id);
             const isWorking = todayShift && todayShift.shift_type !== 'descanso';
             const isResting = todayShift && todayShift.shift_type === 'descanso';
-
             return (
-              <div 
-                key={emp.id} 
-                className="bg-white border border-slate-200 rounded-[32px] p-6 hover:border-odoo-primary/40 transition-all shadow-sm group relative overflow-hidden flex flex-col items-center text-center"
-              >
+              <div key={emp.id} className="bg-white border border-slate-200 rounded-[32px] p-6 hover:border-odoo-primary/40 transition-all shadow-sm group relative overflow-hidden flex flex-col items-center text-center">
                 <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center text-2xl font-black text-odoo-primary mb-4 shadow-inner group-hover:bg-odoo-primary group-hover:text-white transition-all duration-300">
                   {emp.name.charAt(0)}
                 </div>
-                
                 <h3 className="text-xs font-black text-slate-800 uppercase line-clamp-1 mb-1 tracking-tight">{emp.name}</h3>
                 <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-6">{emp.job_title || 'COLABORADOR'}</p>
-                
-                {/* Status Hoy */}
-                <div className={`w-full p-4 rounded-2xl border transition-all ${
-                  isWorking ? 'bg-emerald-600 border-emerald-700 text-white shadow-lg' : 
-                  isResting ? 'bg-slate-400 border-slate-500 text-white shadow-lg' :
-                  'bg-slate-50 border-slate-100 opacity-40'
-                }`}>
+                <div className={`w-full p-4 rounded-2xl border transition-all ${isWorking ? 'bg-emerald-600 border-emerald-700 text-white shadow-lg' : isResting ? 'bg-slate-400 border-slate-500 text-white shadow-lg' : 'bg-slate-50 border-slate-100 opacity-40'}`}>
                   <span className={`text-[8px] font-black uppercase tracking-widest block mb-1 ${isWorking || isResting ? 'text-white/70' : 'text-slate-500'}`}>Estado Hoy</span>
                   {todayShift ? (
                     <div className="flex items-center justify-center gap-2">
                        {isWorking ? <Sun size={14} className="animate-spin-slow"/> : <Coffee size={14}/>}
-                       <span className="text-[11px] font-black uppercase tracking-tighter">
-                         {isWorking ? todayShift.shift_type : 'DESCANSO'}
-                       </span>
+                       <span className="text-[11px] font-black uppercase tracking-tighter">{isWorking ? todayShift.shift_type : 'DESCANSO'}</span>
                     </div>
-                  ) : (
-                    <span className="text-[10px] font-bold uppercase opacity-30 italic">Sin Programar</span>
-                  )}
+                  ) : ( <span className="text-[10px] font-bold uppercase opacity-30 italic">Sin Programar</span> )}
                 </div>
-
                 <div className="grid grid-cols-2 gap-3 w-full mt-6">
                   <button onClick={() => setViewCalendarEmp(emp)} className="bg-white text-slate-600 py-3 rounded-xl text-[9px] font-black uppercase border border-slate-200 hover:bg-slate-50 transition-all flex items-center justify-center gap-2">
                      <Calendar size={14}/> Ver Mes
@@ -396,22 +371,18 @@ export const StaffManagement: React.FC<StaffManagementProps> = ({
         </div>
       )}
 
-      {/* VISTA CALENDARIO OPERATIVO */}
       {viewCalendarEmp && (
         <EmployeeCalendar 
           employee={viewCalendarEmp} 
-          shifts={shifts.filter(s => s.employee_id === viewCalendarEmp.id)} 
+          // CRITICO: Normalizar a número para asegurar filtrado
+          shifts={shifts.filter(s => Number(s.employee_id) === Number(viewCalendarEmp.id))} 
           onClose={() => setViewCalendarEmp(null)} 
         />
       )}
 
-      {/* MODAL DE CARGA DE TURNOS */}
       {showAddShift && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-xl animate-fade">
-           <form 
-            onSubmit={handleAddShiftRange} 
-            className="relative w-full max-w-[480px] bg-white rounded-[40px] shadow-2xl flex flex-col overflow-hidden"
-           >
+           <form onSubmit={handleAddShiftRange} className="relative w-full max-w-[480px] bg-white rounded-[40px] shadow-2xl flex flex-col overflow-hidden">
               <div className="px-10 py-8 bg-slate-50 border-b flex justify-between items-center shrink-0">
                  <div className="flex items-center gap-5">
                     <div className="w-12 h-12 bg-odoo-primary rounded-xl flex items-center justify-center text-white shadow-lg shadow-odoo-primary/20"><CalendarDays size={24}/></div>
@@ -422,15 +393,13 @@ export const StaffManagement: React.FC<StaffManagementProps> = ({
                  </div>
                  <button type="button" onClick={() => setShowAddShift(false)} className="w-10 h-10 flex items-center justify-center bg-white rounded-xl shadow-sm text-slate-300 hover:text-red-500 border border-slate-100 transition-all"><X size={24}/></button>
               </div>
-              
               <div className="p-10 space-y-6 bg-white overflow-y-auto custom-scrollbar max-h-[65vh]">
                  <div className="space-y-2">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Colaborador</label>
-                    <select name="employee_id" defaultValue={selectedEmployee?.id} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-5 py-4 text-xs font-black text-slate-700 outline-none focus:border-odoo-primary/30">
+                    <select name="employee_id" defaultValue={selectedEmployee?.id} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-5 py-4 text-xs font-black text-slate-700 outline-none">
                        {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
                     </select>
                  </div>
-
                  <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Inicio</label>
@@ -441,11 +410,10 @@ export const StaffManagement: React.FC<StaffManagementProps> = ({
                        <input type="date" name="end_date" required className="w-full bg-slate-50 border border-slate-200 rounded-xl px-5 py-4 text-xs font-black text-slate-700 outline-none" defaultValue={new Date().toISOString().split('T')[0]}/>
                     </div>
                  </div>
-
                  <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Tipo</label>
-                      <select value={shiftType} onChange={(e) => setShiftType(e.target.value as any)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-5 py-4 text-[10px] font-black uppercase text-slate-700 outline-none cursor-pointer">
+                      <select value={shiftType} onChange={(e) => setShiftType(e.target.value as any)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-5 py-4 text-[10px] font-black uppercase text-slate-700 outline-none">
                          <option value="mañana">☀ MAÑANA</option>
                          <option value="tarde">🌆 TARDE</option>
                          <option value="completo">⚡ FULL DAY</option>
@@ -454,12 +422,11 @@ export const StaffManagement: React.FC<StaffManagementProps> = ({
                     </div>
                     <div className="space-y-2">
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Ubicación</label>
-                      <select name="pos_id" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-4 text-[10px] font-black uppercase text-slate-700 outline-none cursor-pointer">
+                      <select name="pos_id" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-4 text-[10px] font-black uppercase text-slate-700 outline-none">
                          {posConfigs.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                       </select>
                     </div>
                  </div>
-
                  <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Entrada</label>
@@ -470,23 +437,13 @@ export const StaffManagement: React.FC<StaffManagementProps> = ({
                        <input type="time" name="end" required className="w-full bg-slate-50 border border-slate-200 rounded-xl px-5 py-4 text-xs font-black text-slate-700 outline-none" defaultValue="21:00"/>
                     </div>
                  </div>
-
                  <div className="pt-6 border-t border-slate-100">
                     <label className="text-[10px] font-black text-slate-800 uppercase tracking-[0.2em] flex items-center gap-2 mb-4">
                        <Coffee size={18} className="text-emerald-500"/> Descansos Semanales
                     </label>
                     <div className="grid grid-cols-7 gap-2">
                        {DAYS_OF_WEEK.map(day => (
-                         <button 
-                            key={day.value} 
-                            type="button" 
-                            onClick={() => toggleRestDay(day.value)} 
-                            className={`relative py-4 rounded-xl text-[9px] font-black uppercase transition-all border flex flex-col items-center justify-center gap-1 ${
-                              restDays.includes(day.value) 
-                              ? 'bg-emerald-600 text-white border-emerald-700 shadow-lg scale-95' 
-                              : 'bg-slate-50 text-slate-400 border-slate-100 hover:bg-white'
-                            }`}
-                         >
+                         <button key={day.value} type="button" onClick={() => toggleRestDay(day.value)} className={`relative py-4 rounded-xl text-[9px] font-black uppercase transition-all border flex flex-col items-center justify-center gap-1 ${restDays.includes(day.value) ? 'bg-emerald-600 text-white border-emerald-700 shadow-lg scale-95' : 'bg-slate-50 text-slate-400 border-slate-100 hover:bg-white'}`}>
                            {day.label}
                            {restDays.includes(day.value) && <div className="w-1 h-1 bg-white rounded-full animate-pulse"></div>}
                          </button>
@@ -494,13 +451,8 @@ export const StaffManagement: React.FC<StaffManagementProps> = ({
                     </div>
                  </div>
               </div>
-
               <div className="px-10 py-8 bg-slate-50 border-t">
-                 <button 
-                  type="submit" 
-                  disabled={dbLoading} 
-                  className="w-full bg-odoo-primary text-white py-5 rounded-[20px] font-black uppercase text-xs tracking-widest shadow-xl shadow-odoo-primary/20 flex items-center justify-center gap-4 hover:bg-[#5e3e55] active:scale-[0.98] transition-all disabled:opacity-50"
-                 >
+                 <button type="submit" disabled={dbLoading} className="w-full bg-odoo-primary text-white py-5 rounded-[20px] font-black uppercase text-xs tracking-widest shadow-xl shadow-odoo-primary/20 flex items-center justify-center gap-4 active:scale-[0.98] transition-all disabled:opacity-50">
                     {dbLoading ? <RefreshCw size={24} className="animate-spin"/> : <Check size={24}/>}
                     <span>{dbLoading ? 'Guardando...' : 'Publicar Horarios'}</span>
                  </button>

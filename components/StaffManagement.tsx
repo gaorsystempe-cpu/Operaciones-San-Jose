@@ -50,51 +50,53 @@ const EmployeeCalendar = ({
       <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
       <div className="relative w-full max-w-4xl bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-500">
         
-        {/* Cabecera compacta */}
-        <div className="bg-white px-6 py-4 border-b flex justify-between items-center shrink-0">
+        {/* Cabecera */}
+        <div className="bg-white px-6 py-5 border-b flex justify-between items-center shrink-0">
           <div className="flex items-center gap-4">
-            <div className="w-10 h-10 bg-odoo-primary rounded-xl flex items-center justify-center text-white font-black shadow-lg">
+            <div className="w-12 h-12 bg-odoo-primary rounded-2xl flex items-center justify-center text-white font-black text-xl shadow-xl shadow-odoo-primary/20">
               {employee.name.charAt(0)}
             </div>
             <div>
-              <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight leading-none">{employee.name}</h3>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Horarios y Descansos</p>
+              <h3 className="text-base font-black text-slate-800 uppercase tracking-tight leading-none">{employee.name}</h3>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-1.5 flex items-center gap-2">
+                <CalendarDays size={12}/> Mapa Operativo Mensual
+              </p>
             </div>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full text-slate-400 transition-colors">
-            <X size={20}/>
+            <X size={24}/>
           </button>
         </div>
 
-        {/* Barra de Navegación y Leyenda */}
-        <div className="px-6 py-3 bg-slate-50 border-b flex flex-wrap justify-between items-center gap-4 shrink-0">
-          <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-sm">
-            <button onClick={() => setCurrentDate(new Date(daysInMonth.year, daysInMonth.month - 1, 1))} className="text-slate-400 hover:text-odoo-primary p-1"><ChevronLeft size={16}/></button>
-            <h4 className="text-[10px] font-black text-slate-700 uppercase min-w-[120px] text-center tracking-widest">{monthName}</h4>
-            <button onClick={() => setCurrentDate(new Date(daysInMonth.year, daysInMonth.month + 1, 1))} className="text-slate-400 hover:text-odoo-primary p-1"><ChevronRight size={16}/></button>
+        {/* Navegación y Leyenda */}
+        <div className="px-6 py-3 bg-slate-50 border-b flex flex-wrap justify-between items-center gap-6 shrink-0">
+          <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-2xl border border-slate-200 shadow-sm">
+            <button onClick={() => setCurrentDate(new Date(daysInMonth.year, daysInMonth.month - 1, 1))} className="text-slate-400 hover:text-odoo-primary p-1"><ChevronLeft size={18}/></button>
+            <h4 className="text-[11px] font-black text-slate-700 uppercase min-w-[150px] text-center tracking-[0.2em]">{monthName}</h4>
+            <button onClick={() => setCurrentDate(new Date(daysInMonth.year, daysInMonth.month + 1, 1))} className="text-slate-400 hover:text-odoo-primary p-1"><ChevronRight size={18}/></button>
           </div>
           
-          <div className="flex gap-4">
-             <div className="flex items-center gap-2">
-                <div className="w-4 h-4 rounded bg-emerald-600 border border-emerald-700 shadow-sm"></div>
-                <span className="text-[9px] font-black text-slate-600 uppercase tracking-tighter">TRABAJO</span>
+          <div className="flex gap-6">
+             <div className="flex items-center gap-3">
+                <div className="w-5 h-5 rounded-lg bg-emerald-600 border-2 border-emerald-700 shadow-md"></div>
+                <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">TRABAJO</span>
              </div>
-             <div className="flex items-center gap-2">
-                <div className="w-4 h-4 rounded bg-slate-400 border border-slate-500 shadow-sm"></div>
-                <span className="text-[9px] font-black text-slate-600 uppercase tracking-tighter">DESCANSO</span>
+             <div className="flex items-center gap-3">
+                <div className="w-5 h-5 rounded-lg bg-slate-400 border-2 border-slate-500 shadow-md"></div>
+                <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">DESCANSO</span>
              </div>
           </div>
         </div>
 
-        {/* Grid de Calendario con Celdas Cuadradas (CAJAS) */}
-        <div className="flex-1 p-6 bg-slate-50 overflow-y-auto custom-scrollbar">
+        {/* Grid de Calendario - Visualización de Todo el Mes */}
+        <div className="flex-1 p-6 bg-slate-100 overflow-y-auto custom-scrollbar">
           <div className="grid grid-cols-7 gap-2 max-w-3xl mx-auto">
             {['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'].map(d => (
-              <div key={d} className="text-center text-[10px] font-black text-slate-400 uppercase tracking-widest pb-2">{d}</div>
+              <div key={d} className="text-center text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] pb-3">{d}</div>
             ))}
             
             {Array.from({ length: daysInMonth.firstDay }).map((_, i) => (
-              <div key={`empty-${i}`} className="aspect-square bg-slate-100/50 rounded-xl border border-slate-200/30" />
+              <div key={`empty-${i}`} className="aspect-square bg-slate-50/50 rounded-2xl border border-slate-200/50" />
             ))}
 
             {Array.from({ length: daysInMonth.days }).map((_, i) => {
@@ -108,54 +110,58 @@ const EmployeeCalendar = ({
               return (
                 <div 
                   key={day} 
-                  className={`relative aspect-square rounded-xl p-2 border-2 transition-all flex flex-col items-center justify-center text-center overflow-hidden shadow-sm ${
-                    isToday ? 'ring-4 ring-odoo-primary/30 border-odoo-primary bg-white z-10 scale-[1.05]' : 
+                  className={`relative aspect-square rounded-2xl p-2 border-2 transition-all flex flex-col items-center justify-center text-center overflow-hidden shadow-sm ${
+                    // Si está programado, mostramos el color sólido sea hoy o cualquier día
                     isWork ? 'bg-emerald-600 border-emerald-700 text-white' :
                     isRest ? 'bg-slate-400 border-slate-500 text-white' :
                     'bg-white border-slate-200 text-slate-300 border-dashed'
+                  } ${
+                    // Si es HOY, agregamos un borde especial pero MANTENEMOS el fondo
+                    isToday ? 'ring-4 ring-odoo-primary/40 scale-[1.05] z-10 shadow-xl' : ''
                   }`}
                 >
-                  {/* Número de día arriba a la izquierda */}
-                  <div className="absolute top-1 left-2">
-                    <span className={`text-[10px] font-black ${isToday ? 'text-odoo-primary' : (isWork || isRest ? 'text-white/60' : 'text-slate-300')}`}>
+                  {/* Número de día */}
+                  <div className="absolute top-1.5 left-2.5">
+                    <span className={`text-[11px] font-black ${isWork || isRest ? 'text-white/60' : (isToday ? 'text-odoo-primary' : 'text-slate-300')}`}>
                       {day}
                     </span>
                   </div>
 
+                  {/* Etiqueta HOY discreta */}
                   {isToday && (
-                    <div className="absolute top-1 right-1">
-                       <span className="text-[7px] font-black bg-odoo-primary text-white px-1.5 py-0.5 rounded-full uppercase tracking-tighter shadow-sm">Hoy</span>
+                    <div className="absolute top-1.5 right-2">
+                       <span className="text-[7px] font-black bg-white text-odoo-primary px-1.5 py-0.5 rounded-full uppercase tracking-tighter shadow-md">HOY</span>
                     </div>
                   )}
 
                   {shift ? (
                     <div className="flex flex-col items-center w-full px-1">
-                      {/* ETIQUETA PRINCIPAL */}
-                      <span className="text-[10px] font-black uppercase tracking-widest drop-shadow-sm">
+                      {/* ESTADO PROGRAMADO - SIEMPRE VISIBLE */}
+                      <span className="text-[10px] font-black uppercase tracking-[0.1em] drop-shadow-sm">
                         {isRest ? 'DESCANSO' : 'TRABAJO'}
                       </span>
                       
                       {isWork && (
-                        <div className="mt-1 flex flex-col items-center">
-                           <div className="flex items-center gap-1 text-[11px] font-black leading-none">
-                             <Clock size={10} strokeWidth={3}/> {shift.start_time.slice(0,5)}
+                        <div className="mt-1.5 flex flex-col items-center pt-1 border-t border-white/20 w-full">
+                           <div className="flex items-center gap-1 text-[12px] font-black leading-none">
+                             <Clock size={11} strokeWidth={3}/> {shift.start_time.slice(0,5)}
                            </div>
-                           <p className="text-[7px] font-bold uppercase opacity-80 mt-1 truncate max-w-[80px]">
+                           <p className="text-[8px] font-bold uppercase opacity-80 mt-1 truncate max-w-full">
                              {shift.pos_name}
                            </p>
                         </div>
                       )}
 
                       {isRest && (
-                        <div className="mt-1 opacity-50">
-                          <Coffee size={18} />
+                        <div className="mt-1.5 opacity-40">
+                          <Coffee size={24} />
                         </div>
                       )}
                     </div>
                   ) : (
                     <div className="flex flex-col items-center opacity-10">
-                       <Briefcase size={16} />
-                       <span className="text-[7px] font-black mt-1 uppercase">S/P</span>
+                       <Briefcase size={20} />
+                       <span className="text-[8px] font-black mt-1 uppercase tracking-widest">S/P</span>
                     </div>
                   )}
                 </div>
@@ -166,10 +172,10 @@ const EmployeeCalendar = ({
         
         {/* Footer */}
         <div className="px-6 py-4 border-t bg-white flex justify-between items-center shrink-0">
-          <div className="flex items-center gap-2">
-            <Info size={14} className="text-odoo-primary" />
-            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
-              Cajas <span className="text-emerald-600">Verdes</span> = Trabajo | Cajas <span className="text-slate-500">Grises</span> = Descanso
+          <div className="flex items-center gap-3">
+            <Info size={16} className="text-odoo-primary" />
+            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+              Mapa mensual: <span className="text-emerald-600">Verde = Trabajo</span> | <span className="text-slate-400">Gris = Descanso</span>
             </p>
           </div>
         </div>
@@ -178,6 +184,7 @@ const EmployeeCalendar = ({
   );
 };
 
+// ... (Resto del componente StaffManagement permanece igual)
 interface StaffManagementProps {
   isAdmin: boolean;
   employees: Employee[];

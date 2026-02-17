@@ -3,12 +3,12 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Users, Calendar, Clock, Plus, X, RefreshCw, 
   ChevronLeft, ChevronRight, CalendarDays, Check, 
-  MapPin, User, MoreHorizontal, Info
+  MapPin, User, MoreHorizontal, Info, Sun, Moon, Zap, Coffee,
+  ShieldCheck
 } from 'lucide-react';
 import { Employee, PosConfig, Shift } from '../types';
 import { shiftService } from '../services/supabaseService';
 
-// Define the days of the week for the shift planning UI
 const DAYS_OF_WEEK = [
   { label: 'Dom', value: 0 },
   { label: 'Lun', value: 1 },
@@ -19,15 +19,50 @@ const DAYS_OF_WEEK = [
   { label: 'Sáb', value: 6 },
 ];
 
-interface StaffManagementProps {
-  isAdmin: boolean;
-  employees: Employee[];
-  posConfigs: PosConfig[];
-  currentUserEmail?: string;
-  loading: boolean;
-}
+// Temas de Color Profesionales (Diseño de Alta Legibilidad)
+const SHIFT_THEMES: Record<string, { bg: string, text: string, border: string, icon: any, label: string, badge: string }> = {
+  'mañana': { 
+    bg: 'bg-amber-50', 
+    text: 'text-amber-700', 
+    border: 'border-amber-200', 
+    icon: <Sun size={12} />,
+    label: 'MAÑANA',
+    badge: 'bg-amber-500'
+  },
+  'tarde': { 
+    bg: 'bg-indigo-50', 
+    text: 'text-indigo-700', 
+    border: 'border-indigo-200', 
+    icon: <Moon size={12} />,
+    label: 'TARDE',
+    badge: 'bg-indigo-500'
+  },
+  'completo': { 
+    bg: 'bg-purple-50', 
+    text: 'text-purple-700', 
+    border: 'border-purple-200', 
+    icon: <Zap size={12} />,
+    label: 'FULL DAY',
+    badge: 'bg-purple-500'
+  },
+  'noche': { 
+    bg: 'bg-slate-900', 
+    text: 'text-white', 
+    border: 'border-slate-700', 
+    icon: <Moon size={12} />,
+    label: 'NOCTURNO',
+    badge: 'bg-slate-700'
+  },
+  'descanso': { 
+    bg: 'bg-emerald-50', 
+    text: 'text-emerald-700', 
+    border: 'border-emerald-200', 
+    icon: <Coffee size={12} />,
+    label: 'LIBRE',
+    badge: 'bg-emerald-500'
+  }
+};
 
-// Subcomponente de Calendario Profesional
 const EmployeeCalendar = ({ 
   employee, 
   shifts, 
@@ -44,8 +79,6 @@ const EmployeeCalendar = ({
     const month = currentDate.getMonth();
     const firstDay = new Date(year, month, 1).getDay();
     const days = new Date(year, month + 1, 0).getDate();
-    
-    // Ajustar para que lunes sea 0 (opcional, aquí usamos estándar domingo=0)
     return { firstDay, days, year, month };
   }, [currentDate]);
 
@@ -56,84 +89,108 @@ const EmployeeCalendar = ({
     return shifts.find(s => s.date === dateStr);
   };
 
-  const nextMonth = () => setCurrentDate(new Date(daysInMonth.year, daysInMonth.month + 1, 1));
-  const prevMonth = () => setCurrentDate(new Date(daysInMonth.year, daysInMonth.month - 1, 1));
-
   return (
     <div className="fixed inset-0 z-[600] flex items-center justify-end animate-fade">
-      <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-4xl bg-slate-50 h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-500">
+      <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={onClose} />
+      <div className="relative w-full max-w-6xl bg-[#f8fafc] h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-500">
         
-        {/* Header del Calendario */}
-        <div className="bg-white px-8 py-6 border-b flex justify-between items-center">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 bg-odoo-primary/10 rounded-2xl flex items-center justify-center text-odoo-primary font-black text-xl">
+        {/* Header de Ficha Profesional */}
+        <div className="bg-white px-10 py-8 border-b flex justify-between items-center shadow-sm">
+          <div className="flex items-center gap-6">
+            <div className="w-16 h-16 bg-gradient-to-br from-odoo-primary to-[#5e3e55] rounded-3xl flex items-center justify-center text-white font-black text-2xl shadow-xl shadow-odoo-primary/20">
               {employee.name.charAt(0)}
             </div>
             <div>
-              <h3 className="text-lg font-black text-slate-800 uppercase leading-none tracking-tight">{employee.name}</h3>
-              <p className="text-[10px] font-bold text-slate-400 uppercase mt-1 tracking-widest">Calendario de Actividades Mensual</p>
+              <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tighter">{employee.name}</h3>
+              <p className="text-[10px] font-bold text-slate-400 uppercase mt-1 tracking-[0.3em] flex items-center gap-2">
+                <Calendar size={12} className="text-odoo-primary"/> Cronograma Operativo de Botica
+              </p>
             </div>
           </div>
-          <button onClick={onClose} className="p-3 hover:bg-slate-100 rounded-2xl transition-colors text-slate-400"><X size={24}/></button>
+          <button onClick={onClose} className="p-4 hover:bg-red-50 hover:text-red-500 rounded-2xl transition-all text-slate-300">
+            <X size={28}/>
+          </button>
         </div>
 
-        {/* Navegación de Mes */}
-        <div className="px-8 py-4 bg-white flex justify-between items-center border-b">
-          <div className="flex items-center gap-4">
-            <button onClick={prevMonth} className="p-2 hover:bg-slate-50 rounded-lg border border-slate-100"><ChevronLeft size={20}/></button>
-            <h4 className="text-sm font-black text-slate-700 uppercase min-w-[160px] text-center">{monthName}</h4>
-            <button onClick={nextMonth} className="p-2 hover:bg-slate-50 rounded-lg border border-slate-100"><ChevronRight size={20}/></button>
+        {/* Navegación y Legend */}
+        <div className="px-10 py-6 bg-white border-b flex flex-col lg:flex-row justify-between items-center gap-6">
+          <div className="flex items-center gap-4 bg-slate-50 p-2 rounded-2xl border border-slate-100">
+            <button onClick={() => setCurrentDate(new Date(daysInMonth.year, daysInMonth.month - 1, 1))} className="p-3 hover:bg-white hover:shadow-sm rounded-xl transition-all text-slate-400 hover:text-odoo-primary"><ChevronLeft size={20}/></button>
+            <h4 className="text-xs font-black text-slate-700 uppercase min-w-[200px] text-center tracking-widest">{monthName}</h4>
+            <button onClick={() => setCurrentDate(new Date(daysInMonth.year, daysInMonth.month + 1, 1))} className="p-3 hover:bg-white hover:shadow-sm rounded-xl transition-all text-slate-400 hover:text-odoo-primary"><ChevronRight size={20}/></button>
           </div>
-          <div className="flex gap-2">
-            <div className="flex items-center gap-1.5 px-3 py-1 bg-white border border-slate-200 rounded-full">
-              <div className="w-2 h-2 rounded-full bg-odoo-primary"></div>
-              <span className="text-[8px] font-black uppercase text-slate-500">Laboral</span>
-            </div>
-            <div className="flex items-center gap-1.5 px-3 py-1 bg-white border border-slate-200 rounded-full">
-              <div className="w-2 h-2 rounded-full bg-slate-300"></div>
-              <span className="text-[8px] font-black uppercase text-slate-500">Libre</span>
-            </div>
+          
+          <div className="flex flex-wrap justify-center gap-3">
+            {Object.entries(SHIFT_THEMES).map(([key, theme]) => (
+              <div key={key} className={`flex items-center gap-2 px-4 py-2 rounded-full border ${theme.bg} ${theme.border} ${theme.text} text-[9px] font-black uppercase tracking-tighter shadow-sm`}>
+                <span className={`w-2 h-2 rounded-full ${theme.badge}`}></span>
+                {theme.label}
+              </div>
+            ))}
           </div>
         </div>
 
-        {/* Grid de Calendario */}
-        <div className="flex-1 p-8 overflow-y-auto">
-          <div className="grid grid-cols-7 gap-px bg-slate-200 border border-slate-200 rounded-3xl overflow-hidden shadow-sm">
-            {['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'].map(d => (
-              <div key={d} className="bg-slate-50 py-3 text-center text-[9px] font-black text-slate-400 uppercase tracking-widest">{d}</div>
+        {/* Grid Principal del Calendario */}
+        <div className="flex-1 p-10 overflow-y-auto custom-scrollbar">
+          <div className="grid grid-cols-7 gap-4">
+            {['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'].map(d => (
+              <div key={d} className="py-2 text-center text-[10px] font-black text-slate-300 uppercase tracking-[0.4em]">{d}</div>
             ))}
             
-            {/* Espacios vacíos al inicio */}
             {Array.from({ length: daysInMonth.firstDay }).map((_, i) => (
-              <div key={`empty-${i}`} className="bg-white/50 h-32" />
+              <div key={`empty-${i}`} className="bg-slate-50 rounded-3xl border border-dashed border-slate-200 min-h-[160px] opacity-40" />
             ))}
 
-            {/* Días del mes */}
             {Array.from({ length: daysInMonth.days }).map((_, i) => {
               const day = i + 1;
               const shift = getShiftForDay(day);
               const isToday = new Date().toDateString() === new Date(daysInMonth.year, daysInMonth.month, day).toDateString();
+              const theme = shift ? SHIFT_THEMES[shift.shift_type] : null;
 
               return (
-                <div key={day} className={`bg-white h-32 p-3 border-r border-b border-slate-100 transition-colors group relative ${isToday ? 'bg-blue-50/30' : ''}`}>
-                  <span className={`text-[11px] font-black ${isToday ? 'bg-odoo-primary text-white w-6 h-6 flex items-center justify-center rounded-lg shadow-md' : 'text-slate-400'}`}>
-                    {day}
-                  </span>
-                  
-                  {shift && (
-                    <div className={`mt-2 p-2 rounded-xl border text-[9px] leading-tight animate-fade ${
-                      shift.shift_type === 'descanso' 
-                      ? 'bg-slate-50 border-slate-200 text-slate-400 italic' 
-                      : 'bg-white border-odoo-primary/20 text-slate-700 shadow-sm'
-                    }`}>
-                      <p className="font-black uppercase truncate">{shift.shift_type}</p>
-                      {shift.shift_type !== 'descanso' && (
-                        <>
-                          <p className="mt-1 font-bold text-odoo-primary">{shift.start_time.slice(0,5)} - {shift.end_time.slice(0,5)}</p>
-                          <p className="mt-1 opacity-60 flex items-center gap-1"><MapPin size={8}/> {shift.pos_name}</p>
-                        </>
+                <div 
+                  key={day} 
+                  className={`relative min-h-[160px] bg-white rounded-[40px] p-5 border transition-all flex flex-col group ${
+                    isToday ? 'ring-[6px] ring-odoo-primary/5 border-odoo-primary shadow-2xl' : 'border-slate-100 hover:border-slate-300 hover:shadow-xl'
+                  }`}
+                >
+                  <div className="flex justify-between items-start mb-4">
+                    <span className={`text-sm font-black ${isToday ? 'text-odoo-primary' : 'text-slate-300'}`}>
+                      {String(day).padStart(2, '0')}
+                    </span>
+                    {isToday && (
+                      <div className="flex items-center gap-2">
+                         <span className="text-[8px] font-black text-odoo-primary uppercase">HOY</span>
+                         <div className="w-2 h-2 rounded-full bg-odoo-primary animate-ping"></div>
+                      </div>
+                    )}
+                  </div>
+
+                  {shift ? (
+                    <div className={`mt-auto p-4 rounded-[28px] border transition-all animate-fade shadow-sm ${theme?.bg} ${theme?.border} ${theme?.text}`}>
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className={`p-1.5 rounded-xl ${shift.shift_type === 'noche' ? 'bg-white/10' : 'bg-white/80 shadow-inner'}`}>
+                          {theme?.icon}
+                        </div>
+                        <span className="text-[10px] font-black uppercase tracking-tight">{theme?.label}</span>
+                      </div>
+                      
+                      {shift.shift_type !== 'descanso' ? (
+                        <div className="space-y-1.5">
+                           <div className="flex items-center gap-2 text-[11px] font-black">
+                             <Clock size={12}/> {shift.start_time.slice(0,5)} - {shift.end_time.slice(0,5)}
+                           </div>
+                           <div className="flex items-center gap-2 text-[9px] font-bold opacity-75 uppercase truncate">
+                             <MapPin size={11}/> {shift.pos_name}
+                           </div>
+                        </div>
+                      ) : (
+                        <div className="text-[9px] font-black uppercase tracking-[0.1em] opacity-60 italic">Día de Descanso</div>
                       )}
+                    </div>
+                  ) : (
+                    <div className="mt-auto py-4 text-center border-t border-slate-50">
+                       <p className="text-[9px] font-black text-slate-200 uppercase tracking-[0.2em]">Pendiente</p>
                     </div>
                   )}
                 </div>
@@ -146,6 +203,14 @@ const EmployeeCalendar = ({
   );
 };
 
+interface StaffManagementProps {
+  isAdmin: boolean;
+  employees: Employee[];
+  posConfigs: any[];
+  currentUserEmail?: string;
+  loading: boolean;
+}
+
 export const StaffManagement: React.FC<StaffManagementProps> = ({ 
   isAdmin, employees, posConfigs, currentUserEmail, loading: odooLoading 
 }) => {
@@ -155,8 +220,6 @@ export const StaffManagement: React.FC<StaffManagementProps> = ({
   const [showAddShift, setShowAddShift] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [viewCalendarEmp, setViewCalendarEmp] = useState<Employee | null>(null);
-
-  // Form states
   const [shiftType, setShiftType] = useState<'mañana' | 'tarde' | 'completo' | 'noche'>('mañana');
   const [restDays, setRestDays] = useState<number[]>([0]);
 
@@ -174,7 +237,6 @@ export const StaffManagement: React.FC<StaffManagementProps> = ({
 
   useEffect(() => { loadShifts(); }, [isAdmin, currentUserEmail]);
 
-  // Cálculo de estado actual para el Roster
   const getEmployeeStatus = (empId: number) => {
     const today = new Date().toISOString().split('T')[0];
     return shifts.find(s => s.employee_id === empId && s.date === today);
@@ -229,29 +291,29 @@ export const StaffManagement: React.FC<StaffManagementProps> = ({
   };
 
   return (
-    <div className="max-w-[1400px] mx-auto space-y-8 animate-fade pb-24">
+    <div className="max-w-[1400px] mx-auto space-y-10 animate-fade pb-32">
       
-      {/* Header Premium */}
-      <div className="bg-white p-8 border border-slate-200 rounded-[40px] shadow-sm flex flex-col md:flex-row justify-between items-center gap-6">
-        <div className="flex items-center gap-6">
-          <div className="p-4 bg-odoo-primary text-white rounded-3xl shadow-xl shadow-odoo-primary/20">
-            <Users size={32}/>
+      {/* Dashboard Header */}
+      <div className="bg-white p-10 border border-slate-200 rounded-[60px] shadow-sm flex flex-col lg:flex-row justify-between items-center gap-8 relative overflow-hidden">
+        <div className="absolute top-0 right-0 p-12 opacity-[0.03] pointer-events-none">
+           <Users size={240}/>
+        </div>
+        
+        <div className="flex items-center gap-8 z-10">
+          <div className="p-7 bg-odoo-primary text-white rounded-[40px] shadow-2xl shadow-odoo-primary/20">
+            <Users size={48}/>
           </div>
           <div>
-            <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter leading-none">Gestión de Talento</h2>
-            <div className="flex items-center gap-3 mt-2">
-              <span className="flex items-center gap-1.5 text-[10px] font-black text-emerald-500 uppercase tracking-widest bg-emerald-50 px-3 py-1 rounded-full">
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
-                {employees.length} Colaboradores
-              </span>
-              <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">Boticas San José</span>
-            </div>
+            <h2 className="text-4xl font-black text-slate-800 uppercase tracking-tighter leading-none">EQUIPO SAN JOSÉ</h2>
+            <p className="text-[12px] font-bold text-slate-400 uppercase tracking-[0.4em] mt-3 flex items-center gap-3">
+               <ShieldCheck size={16} className="text-emerald-500"/> Centro de Control de Asistencias
+            </p>
           </div>
         </div>
 
-        <div className="flex bg-slate-50 p-2 rounded-[24px] border border-slate-200">
-           <button onClick={() => setView('roster')} className={`px-8 py-3 rounded-2xl text-[10px] font-black uppercase tracking-[0.1em] transition-all ${view === 'roster' ? 'bg-white text-odoo-primary shadow-lg shadow-slate-200' : 'text-slate-400 hover:text-slate-600'}`}>Fichas de Personal</button>
-           <button onClick={() => setView('global')} className={`px-8 py-3 rounded-2xl text-[10px] font-black uppercase tracking-[0.1em] transition-all ${view === 'global' ? 'bg-white text-odoo-primary shadow-lg shadow-slate-200' : 'text-slate-400 hover:text-slate-600'}`}>Monitor Global</button>
+        <div className="flex bg-slate-100 p-2 rounded-[32px] border border-slate-200 z-10">
+           <button onClick={() => setView('roster')} className={`px-12 py-5 rounded-[26px] text-[12px] font-black uppercase tracking-widest transition-all ${view === 'roster' ? 'bg-white text-odoo-primary shadow-xl shadow-slate-200' : 'text-slate-400 hover:text-slate-600'}`}>Fichas de Personal</button>
+           <button onClick={() => setView('global')} className={`px-12 py-5 rounded-[26px] text-[12px] font-black uppercase tracking-widest transition-all ${view === 'global' ? 'bg-white text-odoo-primary shadow-xl shadow-slate-200' : 'text-slate-400 hover:text-slate-600'}`}>Auditoría de Turnos</button>
         </div>
       </div>
 
@@ -259,47 +321,50 @@ export const StaffManagement: React.FC<StaffManagementProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
           {employees.map(emp => {
             const todayShift = getEmployeeStatus(emp.id);
+            const theme = todayShift ? SHIFT_THEMES[todayShift.shift_type] : null;
+
             return (
               <div 
                 key={emp.id} 
-                className="bg-white border border-slate-200 rounded-[40px] p-8 hover:border-odoo-primary/40 transition-all shadow-sm hover:shadow-xl hover:-translate-y-1 group relative overflow-hidden"
+                className="bg-white border border-slate-200 rounded-[56px] p-10 hover:border-odoo-primary/40 transition-all shadow-sm hover:shadow-2xl hover:-translate-y-2 group relative overflow-hidden flex flex-col items-center text-center"
               >
-                <div className="absolute top-0 right-0 p-6 opacity-0 group-hover:opacity-100 transition-opacity">
-                   <button onClick={() => setViewCalendarEmp(emp)} className="p-2 bg-slate-100 text-slate-400 hover:text-odoo-primary rounded-xl transition-colors"><Calendar size={20}/></button>
+                <div className="w-32 h-32 bg-slate-50 rounded-[48px] flex items-center justify-center text-4xl font-black text-odoo-primary mb-8 shadow-inner group-hover:bg-odoo-primary group-hover:text-white transition-all duration-500">
+                  {emp.name.charAt(0)}
+                </div>
+                
+                <h3 className="text-base font-black text-slate-800 uppercase line-clamp-1 mb-1 tracking-tight">{emp.name}</h3>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-8">{emp.job_title || 'COLABORADOR'}</p>
+                
+                {/* Status Badge Profesional */}
+                <div className={`w-full p-6 rounded-[36px] border transition-all ${
+                  !todayShift ? 'bg-slate-50 border-slate-100 opacity-50' : 
+                  theme?.bg + ' ' + theme?.border + ' ' + theme?.text
+                }`}>
+                  <span className="text-[9px] font-black uppercase tracking-[0.3em] opacity-50 block mb-2">Actividad de Hoy</span>
+                  {todayShift ? (
+                    <div className="flex flex-col items-center">
+                      <div className="flex items-center gap-2 mb-1">
+                         {theme?.icon}
+                         <span className="text-xs font-black uppercase tracking-tighter">{theme?.label}</span>
+                      </div>
+                      {todayShift.shift_type !== 'descanso' && (
+                        <span className="text-[11px] font-black mt-1">{todayShift.start_time.slice(0,5)} - {todayShift.end_time.slice(0,5)}</span>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-xs font-bold uppercase opacity-20 italic">No Programado</span>
+                  )}
                 </div>
 
-                <div className="flex flex-col items-center text-center">
-                  <div className="w-24 h-24 bg-slate-50 rounded-[32px] flex items-center justify-center text-3xl font-black text-odoo-primary mb-6 shadow-inner group-hover:bg-odoo-primary group-hover:text-white transition-all duration-500">
-                    {emp.name.charAt(0)}
-                  </div>
-                  <h3 className="text-sm font-black text-slate-800 uppercase line-clamp-1 mb-1">{emp.name}</h3>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-6">{emp.job_title || 'Colaborador'}</p>
-                  
-                  {/* Status del día */}
-                  <div className={`w-full p-4 rounded-3xl border transition-colors ${
-                    !todayShift ? 'bg-slate-50 border-slate-100' : 
-                    todayShift.shift_type === 'descanso' ? 'bg-slate-900 border-slate-900 text-white' : 
-                    'bg-odoo-primary/5 border-odoo-primary/10'
-                  }`}>
-                    <p className="text-[9px] font-black uppercase opacity-40 mb-1">Actividad de Hoy</p>
-                    {todayShift ? (
-                      <div className="flex flex-col items-center">
-                        <span className="text-[10px] font-black uppercase">{todayShift.shift_type}</span>
-                        {todayShift.shift_type !== 'descanso' && (
-                          <span className="text-[10px] font-bold text-odoo-primary mt-1">{todayShift.start_time.slice(0,5)} - {todayShift.end_time.slice(0,5)}</span>
-                        )}
-                      </div>
-                    ) : (
-                      <span className="text-[10px] font-black uppercase text-slate-300 italic">No programado</span>
-                    )}
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3 w-full mt-6">
-                    <button onClick={() => setViewCalendarEmp(emp)} className="bg-slate-50 text-slate-600 py-3 rounded-2xl text-[9px] font-black uppercase border border-slate-100 hover:bg-white transition-all">Ver Horarios</button>
-                    {isAdmin && (
-                      <button onClick={() => { setSelectedEmployee(emp); setShowAddShift(true); }} className="bg-odoo-primary text-white py-3 rounded-2xl text-[9px] font-black uppercase shadow-lg shadow-odoo-primary/10 hover:scale-[1.02] transition-all">Programar</button>
-                    )}
-                  </div>
+                <div className="grid grid-cols-2 gap-4 w-full mt-10">
+                  <button onClick={() => setViewCalendarEmp(emp)} className="bg-white text-slate-600 py-5 rounded-[24px] text-[10px] font-black uppercase border border-slate-200 hover:bg-slate-50 transition-all flex items-center justify-center gap-3">
+                     <Calendar size={14}/> Ver Mes
+                  </button>
+                  {isAdmin && (
+                    <button onClick={() => { setSelectedEmployee(emp); setShowAddShift(true); }} className="bg-odoo-primary text-white py-5 rounded-[24px] text-[10px] font-black uppercase shadow-lg shadow-odoo-primary/10 hover:scale-[1.05] transition-all">
+                      Programar
+                    </button>
+                  )}
                 </div>
               </div>
             );
@@ -308,48 +373,47 @@ export const StaffManagement: React.FC<StaffManagementProps> = ({
       )}
 
       {view === 'global' && (
-        <div className="bg-white border border-slate-200 rounded-[48px] overflow-hidden shadow-sm">
-           <div className="px-10 py-6 border-b bg-slate-50 flex justify-between items-center">
-              <div className="flex items-center gap-4">
-                 <Clock size={24} className="text-odoo-primary"/>
-                 <h3 className="text-xs font-black text-slate-600 uppercase tracking-[0.2em]">Monitor Global de Actividad</h3>
+        <div className="bg-white border border-slate-200 rounded-[64px] overflow-hidden shadow-sm">
+           <div className="px-14 py-10 border-b bg-slate-50 flex justify-between items-center">
+              <div className="flex items-center gap-5">
+                 <Clock size={32} className="text-odoo-primary"/>
+                 <div>
+                    <h3 className="text-sm font-black text-slate-700 uppercase tracking-[0.4em] leading-none">Monitor de Turnos</h3>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase mt-1">Consolidado General de la Cadena</p>
+                 </div>
               </div>
-              {isAdmin && <button onClick={() => { setSelectedEmployee(null); setShowAddShift(true); }} className="bg-odoo-primary text-white py-4 px-8 rounded-2xl text-[10px] font-black uppercase flex items-center gap-3 shadow-xl shadow-odoo-primary/20"><Plus size={20}/> Nueva Ficha Masiva</button>}
+              {isAdmin && <button onClick={() => { setSelectedEmployee(null); setShowAddShift(true); }} className="bg-odoo-primary text-white py-5 px-10 rounded-[28px] text-[11px] font-black uppercase flex items-center gap-4 shadow-2xl shadow-odoo-primary/30 hover:scale-105 transition-all"><Plus size={24}/> Nueva Programación</button>}
            </div>
            <div className="overflow-x-auto custom-scrollbar">
-              <table className="w-full text-left text-[11px]">
+              <table className="w-full text-left">
                  <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase border-b sticky top-0 z-10">
                     <tr>
-                      <th className="px-10 py-6">Colaborador</th>
-                      <th className="px-10 py-6">Sede Asignada</th>
-                      <th className="px-10 py-6">Fecha</th>
-                      <th className="px-10 py-6">Horario</th>
-                      <th className="px-10 py-6">Turno</th>
-                      <th className="px-10 py-6"></th>
+                      <th className="px-14 py-8">Colaborador</th>
+                      <th className="px-14 py-8">Sede Asignada</th>
+                      <th className="px-14 py-8">Fecha</th>
+                      <th className="px-14 py-8 text-center">Tipo de Turno</th>
+                      <th className="px-14 py-8 text-right">Acciones</th>
                     </tr>
                  </thead>
-                 <tbody className="divide-y divide-slate-100">
-                    {shifts.map(shift => (
-                      <tr key={shift.id} className="hover:bg-slate-50/80 transition-colors group">
-                         <td className="px-10 py-5 font-black text-slate-800 uppercase">{shift.employee_name}</td>
-                         <td className="px-10 py-5 font-bold text-slate-500 uppercase">{shift.pos_name}</td>
-                         <td className="px-10 py-5 font-bold text-slate-600 uppercase">
-                            {new Date(shift.date + 'T00:00:00').toLocaleDateString('es-PE', {day: '2-digit', month: 'short', year: 'numeric'})}
-                         </td>
-                         <td className="px-10 py-5 font-medium">{shift.shift_type === 'descanso' ? '---' : `${shift.start_time.slice(0,5)} - ${shift.end_time.slice(0,5)}`}</td>
-                         <td className="px-10 py-5">
-                            <span className={`text-[9px] font-black px-3 py-1.5 rounded-full uppercase ${
-                              shift.shift_type === 'mañana' ? 'bg-amber-50 text-amber-600 border border-amber-100' :
-                              shift.shift_type === 'tarde' ? 'bg-indigo-50 text-indigo-600 border border-indigo-100' :
-                              shift.shift_type === 'completo' ? 'bg-odoo-primary text-white' : 
-                              shift.shift_type === 'descanso' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-400'
-                            }`}>
-                               {shift.shift_type}
-                            </span>
-                         </td>
-                         <td className="px-10 py-5 text-right">{isAdmin && <button onClick={() => { if(confirm("¿Eliminar?")) shiftService.deleteShift(shift.id).then(loadShifts); }} className="p-2 text-slate-200 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"><X size={18}/></button>}</td>
-                      </tr>
-                    ))}
+                 <tbody className="divide-y divide-slate-100 bg-white">
+                    {shifts.map(shift => {
+                       const theme = SHIFT_THEMES[shift.shift_type];
+                       return (
+                        <tr key={shift.id} className="hover:bg-slate-50/50 transition-colors group">
+                           <td className="px-14 py-6 font-black text-slate-800 uppercase text-xs">{shift.employee_name}</td>
+                           <td className="px-14 py-6 font-bold text-slate-500 uppercase text-[11px]">{shift.pos_name}</td>
+                           <td className="px-14 py-6 font-bold text-slate-600 uppercase text-[11px]">
+                              {new Date(shift.date + 'T00:00:00').toLocaleDateString('es-PE', {day: '2-digit', month: 'long', year: 'numeric'})}
+                           </td>
+                           <td className="px-14 py-6 text-center">
+                              <span className={`text-[10px] font-black px-5 py-2 rounded-full uppercase border ${theme?.bg} ${theme?.text} ${theme?.border}`}>
+                                 {theme?.label}
+                              </span>
+                           </td>
+                           <td className="px-14 py-6 text-right">{isAdmin && <button onClick={() => { if(confirm("¿Eliminar turno?")) shiftService.deleteShift(shift.id).then(loadShifts); }} className="p-4 text-slate-200 hover:text-red-500 hover:bg-red-50 rounded-2xl transition-all"><X size={20}/></button>}</td>
+                        </tr>
+                       );
+                    })}
                  </tbody>
               </table>
            </div>
@@ -367,101 +431,102 @@ export const StaffManagement: React.FC<StaffManagementProps> = ({
 
       {/* MODAL DE PROGRAMACIÓN */}
       {showAddShift && (
-        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-fade">
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-xl animate-fade">
            <form 
             onSubmit={handleAddShiftRange} 
-            className="relative w-full max-w-[500px] bg-white rounded-[48px] shadow-2xl flex flex-col overflow-hidden border border-white/20"
+            className="relative w-full max-w-[580px] bg-white rounded-[64px] shadow-2xl flex flex-col overflow-hidden"
            >
-              <div className="px-10 py-8 bg-slate-50 border-b flex justify-between items-center shrink-0">
-                 <div className="flex items-center gap-5">
-                    <div className="w-14 h-14 bg-odoo-primary rounded-[24px] flex items-center justify-center text-white shadow-xl shadow-odoo-primary/20"><CalendarDays size={28}/></div>
+              <div className="px-12 py-12 bg-slate-50 border-b flex justify-between items-center shrink-0">
+                 <div className="flex items-center gap-6">
+                    <div className="w-16 h-16 bg-odoo-primary rounded-[30px] flex items-center justify-center text-white shadow-2xl shadow-odoo-primary/30"><CalendarDays size={32}/></div>
                     <div>
-                      <h3 className="text-xl font-black uppercase text-slate-800 tracking-tighter leading-none">Nueva Ficha</h3>
-                      <p className="text-[10px] font-bold text-slate-400 uppercase mt-1 tracking-[0.2em]">Programación de Turnos</p>
+                      <h3 className="text-3xl font-black uppercase text-slate-800 tracking-tighter leading-none">Nueva Ficha</h3>
+                      <p className="text-[11px] font-bold text-slate-400 uppercase mt-2 tracking-[0.4em]">Asignación de Responsabilidades</p>
                     </div>
                  </div>
-                 <button type="button" onClick={() => setShowAddShift(false)} className="w-12 h-12 flex items-center justify-center bg-white rounded-2xl shadow-sm text-slate-300 hover:text-red-500 border border-slate-100 transition-colors"><X size={24}/></button>
+                 <button type="button" onClick={() => setShowAddShift(false)} className="w-16 h-16 flex items-center justify-center bg-white rounded-[24px] shadow-sm text-slate-300 hover:text-red-500 border border-slate-100 transition-all"><X size={32}/></button>
               </div>
               
-              <div className="p-10 space-y-6 bg-white overflow-y-auto custom-scrollbar max-h-[65vh]">
-                 <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Colaborador</label>
-                    <select name="employee_id" defaultValue={selectedEmployee?.id} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-[11px] font-bold text-slate-700 outline-none focus:ring-4 focus:ring-odoo-primary/5 transition-all">
+              <div className="p-12 space-y-8 bg-white overflow-y-auto custom-scrollbar max-h-[70vh]">
+                 <div className="space-y-4">
+                    <label className="text-[11px] font-black text-slate-400 uppercase tracking-[0.3em] ml-2">Colaborador Principal</label>
+                    <select name="employee_id" defaultValue={selectedEmployee?.id} className="w-full bg-slate-50 border border-slate-200 rounded-[28px] px-8 py-5 text-sm font-black text-slate-700 outline-none focus:ring-[8px] focus:ring-odoo-primary/5 transition-all appearance-none cursor-pointer">
                        {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
                     </select>
                  </div>
 
-                 <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Fecha Inicio</label>
-                       <input type="date" name="start_date" required className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-[11px] font-bold text-slate-700 outline-none" defaultValue={new Date().toISOString().split('T')[0]}/>
+                 <div className="grid grid-cols-2 gap-8">
+                    <div className="space-y-4">
+                       <label className="text-[11px] font-black text-slate-400 uppercase tracking-[0.3em] ml-2">Rango desde</label>
+                       <input type="date" name="start_date" required className="w-full bg-slate-50 border border-slate-200 rounded-[28px] px-8 py-5 text-sm font-black text-slate-700 outline-none" defaultValue={new Date().toISOString().split('T')[0]}/>
                     </div>
-                    <div className="space-y-2">
-                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Fecha Fin</label>
-                       <input type="date" name="end_date" required className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-[11px] font-bold text-slate-700 outline-none" defaultValue={new Date().toISOString().split('T')[0]}/>
+                    <div className="space-y-4">
+                       <label className="text-[11px] font-black text-slate-400 uppercase tracking-[0.3em] ml-2">Hasta</label>
+                       <input type="date" name="end_date" required className="w-full bg-slate-50 border border-slate-200 rounded-[28px] px-8 py-5 text-sm font-black text-slate-700 outline-none" defaultValue={new Date().toISOString().split('T')[0]}/>
                     </div>
                  </div>
 
-                 <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Turno Base</label>
-                      <select value={shiftType} onChange={(e) => setShiftType(e.target.value as any)} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-[10px] font-black uppercase text-slate-700 outline-none">
-                         <option value="mañana">☀ MAÑANA</option>
-                         <option value="tarde">🌆 TARDE</option>
-                         <option value="completo">⚡ COMPLETO</option>
-                         <option value="noche">🌙 NOCHE</option>
+                 <div className="grid grid-cols-2 gap-8">
+                    <div className="space-y-4">
+                      <label className="text-[11px] font-black text-slate-400 uppercase tracking-[0.3em] ml-2">Turno Operativo</label>
+                      <select value={shiftType} onChange={(e) => setShiftType(e.target.value as any)} className="w-full bg-slate-50 border border-slate-200 rounded-[28px] px-8 py-5 text-[11px] font-black uppercase text-slate-700 outline-none cursor-pointer">
+                         <option value="mañana">☀ TURNO MAÑANA</option>
+                         <option value="tarde">🌆 TURNO TARDE</option>
+                         <option value="completo">⚡ JORNADA COMPLETA</option>
+                         <option value="noche">🌙 TURNO NOCHE</option>
                       </select>
                     </div>
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Sede/Punto</label>
-                      <select name="pos_id" className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-[10px] font-black uppercase text-slate-700 outline-none">
+                    <div className="space-y-4">
+                      <label className="text-[11px] font-black text-slate-400 uppercase tracking-[0.3em] ml-2">Sede / Botica</label>
+                      <select name="pos_id" className="w-full bg-slate-50 border border-slate-200 rounded-[28px] px-8 py-5 text-[11px] font-black uppercase text-slate-700 outline-none cursor-pointer">
                          {posConfigs.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                       </select>
                     </div>
                  </div>
 
-                 <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Entrada</label>
-                       <input type="time" name="start" required className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-[11px] font-bold text-slate-700 outline-none" defaultValue="08:00"/>
+                 <div className="grid grid-cols-2 gap-8">
+                    <div className="space-y-4">
+                       <label className="text-[11px] font-black text-slate-400 uppercase tracking-[0.3em] ml-2">Hora Entrada</label>
+                       <input type="time" name="start" required className="w-full bg-slate-50 border border-slate-200 rounded-[28px] px-8 py-5 text-sm font-black text-slate-700 outline-none" defaultValue="08:00"/>
                     </div>
-                    <div className="space-y-2">
-                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Salida</label>
-                       <input type="time" name="end" required className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-[11px] font-bold text-slate-700 outline-none" defaultValue="14:00"/>
+                    <div className="space-y-4">
+                       <label className="text-[11px] font-black text-slate-400 uppercase tracking-[0.3em] ml-2">Hora Salida</label>
+                       <input type="time" name="end" required className="w-full bg-slate-50 border border-slate-200 rounded-[28px] px-8 py-5 text-sm font-black text-slate-700 outline-none" defaultValue="14:00"/>
                     </div>
                  </div>
 
-                 <div className="pt-6 border-t border-slate-100">
-                    <label className="text-[10px] font-black text-slate-800 uppercase tracking-[0.3em] flex items-center gap-2 mb-4">
-                       Descansos Semanales
+                 <div className="pt-8 border-t border-slate-100">
+                    <label className="text-[11px] font-black text-slate-800 uppercase tracking-[0.4em] flex items-center gap-4 mb-8">
+                       <Coffee size={18} className="text-emerald-500"/> Definir Descansos Semanales
                     </label>
-                    <div className="grid grid-cols-7 gap-2">
+                    <div className="grid grid-cols-7 gap-4">
                        {DAYS_OF_WEEK.map(day => (
                          <button 
                             key={day.value} 
                             type="button" 
                             onClick={() => toggleRestDay(day.value)} 
-                            className={`relative py-4 rounded-[20px] text-[10px] font-black uppercase transition-all border flex items-center justify-center ${
+                            className={`relative py-6 rounded-[30px] text-[10px] font-black uppercase transition-all border flex flex-col items-center justify-center gap-2 ${
                               restDays.includes(day.value) 
-                              ? 'bg-slate-900 text-white border-slate-900 shadow-xl shadow-slate-200 scale-95' 
+                              ? 'bg-emerald-500 text-white border-emerald-500 shadow-2xl shadow-emerald-200 scale-95' 
                               : 'bg-slate-50 text-slate-400 border-slate-100 hover:bg-white'
                             }`}
                          >
                            {day.label}
+                           {restDays.includes(day.value) && <div className="w-1.5 h-1.5 bg-white rounded-full"></div>}
                          </button>
                        ))}
                     </div>
                  </div>
               </div>
 
-              <div className="px-10 py-8 bg-slate-50/80 border-t">
+              <div className="px-12 py-10 bg-slate-50 border-t">
                  <button 
                   type="submit" 
                   disabled={dbLoading} 
-                  className="w-full bg-odoo-primary text-white py-5 rounded-[24px] font-black uppercase text-xs tracking-[0.2em] shadow-2xl shadow-odoo-primary/20 flex items-center justify-center gap-4 hover:bg-[#5e3e55] active:scale-[0.98] transition-all disabled:opacity-50"
+                  className="w-full bg-odoo-primary text-white py-7 rounded-[36px] font-black uppercase text-[13px] tracking-[0.3em] shadow-2xl shadow-odoo-primary/30 flex items-center justify-center gap-6 hover:bg-[#5e3e55] active:scale-[0.98] transition-all disabled:opacity-50"
                  >
-                    {dbLoading ? <RefreshCw size={24} className="animate-spin"/> : <Check size={24}/>}
-                    <span>{dbLoading ? 'Registrando...' : 'Confirmar Programación'}</span>
+                    {dbLoading ? <RefreshCw size={28} className="animate-spin"/> : <Check size={28}/>}
+                    <span>{dbLoading ? 'Sincronizando...' : 'Publicar Cronograma'}</span>
                  </button>
               </div>
            </form>

@@ -25,6 +25,7 @@ const DEFAULT_CONFIG: AppConfig = {
 };
 
 const ADMIN_EMAILS = ['soporte@facturaclic.pe', 'admin1@sanjose.pe'];
+const SUPER_USER_EMAIL = 'soporte@facturaclic.pe';
 const EXCLUDED_EMPLOYEE_NAMES = ['YULI', 'DEMO', '3E', 'PROBANDO', 'TEST', 'USUARIO'];
 
 const App: React.FC = () => {
@@ -47,6 +48,11 @@ const App: React.FC = () => {
   const isAdmin = useMemo(() => {
     if (!session || !session.login) return false;
     return ADMIN_EMAILS.includes(session.login.toLowerCase());
+  }, [session]);
+
+  const isSuperUser = useMemo(() => {
+    if (!session || !session.login) return false;
+    return session.login.toLowerCase() === SUPER_USER_EMAIL.toLowerCase();
   }, [session]);
 
   const [view, setView] = useState<'login' | 'app'>(session ? 'app' : 'login');
@@ -342,7 +348,10 @@ const App: React.FC = () => {
                  <button onClick={() => setActiveTab('dashboard')} className={`o-sidebar-item w-full text-left ${activeTab === 'dashboard' ? 'active' : ''}`}><LayoutDashboard size={18} /> Resumen Ejecutivo</button>
                  <button onClick={() => setActiveTab('sesiones')} className={`o-sidebar-item w-full text-left ${activeTab === 'sesiones' ? 'active' : ''}`}><Clock size={18} /> Control Sesiones</button>
                  <button onClick={() => setActiveTab('ventas')} className={`o-sidebar-item w-full text-left ${activeTab === 'ventas' ? 'active' : ''}`}><TrendingUp size={18} /> Auditoría Puntos</button>
-                 <button onClick={() => setActiveTab('reportes')} className={`o-sidebar-item w-full text-left ${activeTab === 'reportes' ? 'active' : ''}`}><Send size={18} /> Reportes 11 PM</button>
+                 
+                 {isSuperUser && (
+                   <button onClick={() => setActiveTab('reportes')} className={`o-sidebar-item w-full text-left ${activeTab === 'reportes' ? 'active' : ''}`}><Send size={18} /> Reportes 11 PM</button>
+                 )}
                  
                  <div className="px-4 mt-8 mb-4"><h3 className="text-[9px] font-black text-slate-300 uppercase tracking-[0.3em]">Gestión RRHH</h3></div>
                  <button onClick={() => setActiveTab('personal')} className={`o-sidebar-item w-full text-left ${activeTab === 'personal' ? 'active' : ''}`}><Users size={18} /> Personal y Horarios</button>
@@ -378,20 +387,22 @@ const App: React.FC = () => {
               onCloseDetail={() => setPosSalesData((prev:any) => ({...prev, _selected: null}))} 
             />
           )}
-          {activeTab === 'reportes' && isAdmin && <ReportesModule />}
+          {activeTab === 'reportes' && isSuperUser && <ReportesModule />}
           {activeTab === 'personal' && <StaffManagement isAdmin={isAdmin} employees={employees} posConfigs={posConfigs} currentUserEmail={session?.login} loading={loading} />}
           {activeTab === 'pedidos' && <OrderModule productSearch={productSearch} setProductSearch={setProductSearch} onSearch={handleProductSearch} products={products} cart={cart} setCart={setCart} warehouses={warehouses.filter(w => w.id !== originWarehouseId)} targetWarehouseId={targetWarehouseId} setTargetWarehouseId={setTargetWarehouseId} onSubmitOrder={handleSubmitOrder} loading={loading} />}
         </main>
       </div>
 
       <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-white/90 backdrop-blur-xl border-t border-slate-200 flex items-center justify-around z-[200] px-4 shadow-[0_-10px_30px_rgba(0,0,0,0.03)] rounded-t-[24px]">
-           {isAdmin ? (
+           {isAdmin && (
              <>
                <button onClick={() => { setActiveTab('dashboard'); window.scrollTo(0, 0); }} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'dashboard' ? 'text-odoo-primary scale-110' : 'text-slate-300'}`}><LayoutDashboard size={22} strokeWidth={activeTab === 'dashboard' ? 3 : 2}/><span className="text-[8px] font-black uppercase tracking-widest">BI</span></button>
-               <button onClick={() => { setActiveTab('reportes'); window.scrollTo(0, 0); }} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'reportes' ? 'text-odoo-primary scale-110' : 'text-slate-300'}`}><Send size={22} strokeWidth={activeTab === 'reportes' ? 3 : 2}/><span className="text-[8px] font-black uppercase tracking-widest">Sent</span></button>
+               {isSuperUser && (
+                 <button onClick={() => { setActiveTab('reportes'); window.scrollTo(0, 0); }} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'reportes' ? 'text-odoo-primary scale-110' : 'text-slate-300'}`}><Send size={22} strokeWidth={activeTab === 'reportes' ? 3 : 2}/><span className="text-[8px] font-black uppercase tracking-widest">Sent</span></button>
+               )}
                <button onClick={() => { setActiveTab('ventas'); window.scrollTo(0, 0); }} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'ventas' ? 'text-odoo-primary scale-110' : 'text-slate-300'}`}><TrendingUp size={22} strokeWidth={activeTab === 'ventas' ? 3 : 2}/><span className="text-[8px] font-black uppercase tracking-widest">Audit</span></button>
              </>
-           ) : null}
+           )}
            <button onClick={() => { setActiveTab('pedidos'); window.scrollTo(0, 0); }} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'pedidos' ? 'text-odoo-primary scale-110' : 'text-slate-300'}`}><Truck size={22} strokeWidth={activeTab === 'pedidos' ? 3 : 2}/><span className="text-[8px] font-black uppercase tracking-widest">Envios</span></button>
            {!isAdmin && <button onClick={() => { setActiveTab('personal'); window.scrollTo(0, 0); }} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'personal' ? 'text-odoo-primary scale-110' : 'text-slate-300'}`}><Clock size={22} strokeWidth={activeTab === 'personal' ? 3 : 2}/><span className="text-[8px] font-black uppercase tracking-widest">Mis Horas</span></button>}
       </nav>

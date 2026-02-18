@@ -1,7 +1,6 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.7';
 
-// Configuración de Supabase - Boticas San José Hub
 const SUPABASE_URL = "https://vwrugxpijvrlvehrtobr.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ3cnVneHBpanZybHZlaHJ0b2JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEyNjQyNTYsImV4cCI6MjA4Njg0MDI1Nn0.h5MCuqa8Mx0AdSVcYNDR43CX9V3GP_Bi-TCUTzk8nyU";
 
@@ -49,5 +48,18 @@ export const shiftService = {
       .delete()
       .eq('id', id);
     if (error) throw error;
+  }
+};
+
+export const reportService = {
+  async getDailyClosings(limit = 30) {
+    const { data, error } = await supabase
+      .from('cierres_diarios')
+      .select('*')
+      .order('fecha', { ascending: false })
+      .order('pos_nombre', { ascending: true })
+      .limit(limit);
+    if (error) throw error;
+    return data;
   }
 };

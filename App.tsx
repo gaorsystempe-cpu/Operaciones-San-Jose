@@ -4,7 +4,7 @@ import {
   LogOut, RefreshCw, User as UserIcon, Loader2, 
   LayoutDashboard, Truck, TrendingUp, AlertTriangle, Calendar, DollarSign, 
   Settings, Grid, Bell, HelpCircle, Package, Store, Clock, UserCheck,
-  ExternalLink, ChevronRight, Menu, X, ShieldCheck, Zap, Users
+  ExternalLink, ChevronRight, Menu, X, ShieldCheck, Zap, Users, Send
 } from 'lucide-react';
 import { OdooClient } from './services/odooService';
 import { AppConfig, Product, Warehouse, Employee } from './types';
@@ -14,6 +14,7 @@ import { AuditModule } from './components/AuditModule';
 import { OrderModule } from './components/OrderModule';
 import { SessionModule } from './components/SessionModule';
 import { StaffManagement } from './components/StaffManagement';
+import { ReportesModule } from './components/ReportesModule';
 
 const DEFAULT_CONFIG: AppConfig = {
   url: "https://mitienda.facturaclic.pe",
@@ -72,7 +73,6 @@ const App: React.FC = () => {
     end: getPeruDateString() 
   });
   
-  // Datos Raw para Reporte Avanzado
   const [rawOrders, setRawOrders] = useState<any[]>([]);
   const [rawLines, setRawLines] = useState<any[]>([]);
   const [rawPayments, setRawPayments] = useState<any[]>([]);
@@ -100,7 +100,6 @@ const App: React.FC = () => {
         if (!uid) throw new Error("Sesión expirada.");
       }
 
-      // Buscamos específicamente la compañía SAN JOSE para tener su ID exacto
       const companies = await client.searchRead('res.company', [['name', 'ilike', 'SAN JOSE']], ['id']);
       if (!companies || !companies.length) throw new Error("Compañía no encontrada.");
       const sanJoseId = companies[0].id;
@@ -222,10 +221,9 @@ const App: React.FC = () => {
     if (term.length < 3 || !currentCompanyId) return;
     setLoading(true);
     try {
-      // FIX: Añadimos filtro estricto por company_id para evitar productos de P&P FARMA u otras
       const results = await client.searchRead('product.product', [
         ['active', '=', true],
-        ['company_id', 'in', [currentCompanyId, false]], // SAN JOSE o Globales
+        ['company_id', 'in', [currentCompanyId, false]],
         '|', ['name', 'ilike', term], ['default_code', 'ilike', term]
       ], ['id', 'name', 'default_code', 'qty_available', 'list_price'], { 
         context: originLocationId ? { location: originLocationId } : {}, 
@@ -344,6 +342,8 @@ const App: React.FC = () => {
                  <button onClick={() => setActiveTab('dashboard')} className={`o-sidebar-item w-full text-left ${activeTab === 'dashboard' ? 'active' : ''}`}><LayoutDashboard size={18} /> Resumen Ejecutivo</button>
                  <button onClick={() => setActiveTab('sesiones')} className={`o-sidebar-item w-full text-left ${activeTab === 'sesiones' ? 'active' : ''}`}><Clock size={18} /> Control Sesiones</button>
                  <button onClick={() => setActiveTab('ventas')} className={`o-sidebar-item w-full text-left ${activeTab === 'ventas' ? 'active' : ''}`}><TrendingUp size={18} /> Auditoría Puntos</button>
+                 <button onClick={() => setActiveTab('reportes')} className={`o-sidebar-item w-full text-left ${activeTab === 'reportes' ? 'active' : ''}`}><Send size={18} /> Reportes 11 PM</button>
+                 
                  <div className="px-4 mt-8 mb-4"><h3 className="text-[9px] font-black text-slate-300 uppercase tracking-[0.3em]">Gestión RRHH</h3></div>
                  <button onClick={() => setActiveTab('personal')} className={`o-sidebar-item w-full text-left ${activeTab === 'personal' ? 'active' : ''}`}><Users size={18} /> Personal y Horarios</button>
                  <div className="px-4 mt-8 mb-4"><h3 className="text-[9px] font-black text-slate-300 uppercase tracking-[0.3em]">Parámetros</h3></div>
@@ -378,6 +378,7 @@ const App: React.FC = () => {
               onCloseDetail={() => setPosSalesData((prev:any) => ({...prev, _selected: null}))} 
             />
           )}
+          {activeTab === 'reportes' && isAdmin && <ReportesModule />}
           {activeTab === 'personal' && <StaffManagement isAdmin={isAdmin} employees={employees} posConfigs={posConfigs} currentUserEmail={session?.login} loading={loading} />}
           {activeTab === 'pedidos' && <OrderModule productSearch={productSearch} setProductSearch={setProductSearch} onSearch={handleProductSearch} products={products} cart={cart} setCart={setCart} warehouses={warehouses.filter(w => w.id !== originWarehouseId)} targetWarehouseId={targetWarehouseId} setTargetWarehouseId={setTargetWarehouseId} onSubmitOrder={handleSubmitOrder} loading={loading} />}
         </main>
@@ -387,7 +388,7 @@ const App: React.FC = () => {
            {isAdmin ? (
              <>
                <button onClick={() => { setActiveTab('dashboard'); window.scrollTo(0, 0); }} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'dashboard' ? 'text-odoo-primary scale-110' : 'text-slate-300'}`}><LayoutDashboard size={22} strokeWidth={activeTab === 'dashboard' ? 3 : 2}/><span className="text-[8px] font-black uppercase tracking-widest">BI</span></button>
-               <button onClick={() => { setActiveTab('personal'); window.scrollTo(0, 0); }} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'personal' ? 'text-odoo-primary scale-110' : 'text-slate-300'}`}><Users size={22} strokeWidth={activeTab === 'personal' ? 3 : 2}/><span className="text-[8px] font-black uppercase tracking-widest">Team</span></button>
+               <button onClick={() => { setActiveTab('reportes'); window.scrollTo(0, 0); }} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'reportes' ? 'text-odoo-primary scale-110' : 'text-slate-300'}`}><Send size={22} strokeWidth={activeTab === 'reportes' ? 3 : 2}/><span className="text-[8px] font-black uppercase tracking-widest">Sent</span></button>
                <button onClick={() => { setActiveTab('ventas'); window.scrollTo(0, 0); }} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'ventas' ? 'text-odoo-primary scale-110' : 'text-slate-300'}`}><TrendingUp size={22} strokeWidth={activeTab === 'ventas' ? 3 : 2}/><span className="text-[8px] font-black uppercase tracking-widest">Audit</span></button>
              </>
            ) : null}

@@ -61,5 +61,22 @@ export const reportService = {
       .limit(limit);
     if (error) throw error;
     return data;
+  },
+
+  async getReportConfig() {
+    const { data, error } = await supabase
+      .from('app_settings')
+      .select('value')
+      .eq('key', 'report_hour')
+      .single();
+    if (error && error.code !== 'PGRST116') throw error;
+    return data?.value || '23'; // Default 11 PM
+  },
+
+  async updateReportConfig(hour: string) {
+    const { error } = await supabase
+      .from('app_settings')
+      .upsert({ key: 'report_hour', value: hour }, { onConflict: 'key' });
+    if (error) throw error;
   }
 };

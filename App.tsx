@@ -100,6 +100,7 @@ const App: React.FC = () => {
         if (!uid) throw new Error("Sesión expirada.");
       }
 
+      // Buscamos específicamente la compañía SAN JOSE para tener su ID exacto
       const companies = await client.searchRead('res.company', [['name', 'ilike', 'SAN JOSE']], ['id']);
       if (!companies || !companies.length) throw new Error("Compañía no encontrada.");
       const sanJoseId = companies[0].id;
@@ -116,8 +117,6 @@ const App: React.FC = () => {
         setOriginWarehouseId(principal.id);
         if (principal.lot_stock_id) setOriginLocationId(principal.lot_stock_id[0]);
 
-        // BUSQUEDA DINAMICA DEL TIPO DE OPERACION
-        // Buscamos el ID de "Transferencias Internas" para el almacén principal
         const pickingTypes = await client.searchRead('stock.picking.type', [
           ['warehouse_id', '=', principal.id],
           ['code', '=', 'internal']
@@ -220,10 +219,18 @@ const App: React.FC = () => {
   };
 
   const handleProductSearch = async (term: string) => {
-    if (term.length < 3) return;
+    if (term.length < 3 || !currentCompanyId) return;
     setLoading(true);
     try {
-      const results = await client.searchRead('product.product', [['active', '=', true], '|', ['name', 'ilike', term], ['default_code', 'ilike', term]], ['id', 'name', 'default_code', 'qty_available', 'list_price'], { context: originLocationId ? { location: originLocationId } : {}, limit: 20 });
+      // FIX: Añadimos filtro estricto por company_id para evitar productos de P&P FARMA u otras
+      const results = await client.searchRead('product.product', [
+        ['active', '=', true],
+        ['company_id', 'in', [currentCompanyId, false]], // SAN JOSE o Globales
+        '|', ['name', 'ilike', term], ['default_code', 'ilike', term]
+      ], ['id', 'name', 'default_code', 'qty_available', 'list_price'], { 
+        context: originLocationId ? { location: originLocationId } : {}, 
+        limit: 20 
+      });
       setProducts(results || []);
     } catch (e: any) { console.error(e); } finally { setLoading(false); }
   };
@@ -238,7 +245,6 @@ const App: React.FC = () => {
       const targetWarehouse = warehouses.find(w => w.id === targetWarehouseId);
       if (!targetWarehouse) throw new Error("Botica destino no válida.");
       
-      // CREACION DEL PICKING (ALBARAN)
       const pickingId = await client.create('stock.picking', {
         picking_type_id: internalPickingTypeId,
         location_id: originLocationId,

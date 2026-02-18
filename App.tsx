@@ -24,8 +24,6 @@ const DEFAULT_CONFIG: AppConfig = {
 };
 
 const ADMIN_EMAILS = ['soporte@facturaclic.pe', 'admin1@sanjose.pe'];
-
-// Lista negra de nombres a filtrar por petición del usuario
 const EXCLUDED_EMPLOYEE_NAMES = ['YULI', 'DEMO', '3E', 'PROBANDO', 'TEST', 'USUARIO'];
 
 const App: React.FC = () => {
@@ -74,6 +72,11 @@ const App: React.FC = () => {
     end: getPeruDateString() 
   });
   
+  // Datos Raw para Reporte Avanzado
+  const [rawOrders, setRawOrders] = useState<any[]>([]);
+  const [rawLines, setRawLines] = useState<any[]>([]);
+  const [rawPayments, setRawPayments] = useState<any[]>([]);
+
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [originWarehouseId, setOriginWarehouseId] = useState<number | null>(null);
   const [originLocationId, setOriginLocationId] = useState<number | null>(null);
@@ -109,23 +112,14 @@ const App: React.FC = () => {
         if (principal.lot_stock_id) setOriginLocationId(principal.lot_stock_id[0]);
       }
 
-      // Fetch y filtrado de empleados solicitado
       const empData = await client.searchRead('hr.employee', [['active', '=', true]], ['id', 'name', 'job_title', 'work_email', 'work_phone', 'department_id', 'image_128']) || [];
-      
       const filteredEmps = empData.filter((emp: any) => {
         const nameUpper = emp.name.toUpperCase();
         const trimmedName = emp.name.trim();
-        
-        // Reglas de filtrado:
-        // 1. No debe estar en la lista negra
-        // 2. El nombre debe tener más de 2 caracteres (para quitar "e", "d", etc)
-        // 3. No debe ser solo caracteres basura
         const isExcluded = EXCLUDED_EMPLOYEE_NAMES.some(term => nameUpper.includes(term));
         const isTooShort = trimmedName.length <= 2;
-        
         return !isExcluded && !isTooShort;
       });
-
       setEmployees(filteredEmps);
 
       if (isAdmin) {
@@ -137,15 +131,18 @@ const App: React.FC = () => {
         const openSessions = await client.searchRead('pos.session', [['state', '=', 'opened'], ['config_id', 'in', filteredConfigs.map(c => c.id)]], ['id', 'name', 'user_id', 'start_at', 'config_id']) || [];
         setActiveSessions(openSessions);
 
-        const orders = await client.searchRead('pos.order', [['company_id', '=', sanJoseId], ['date_order', '>=', `${dateRange.start} 00:00:00`], ['date_order', '<=', `${dateRange.end} 23:59:59`], ['state', 'in', ['paid', 'done', 'invoiced']]], ['id', 'amount_total', 'config_id', 'session_id', 'lines', 'payment_ids']) || [];
-        const orderIds = orders.map(o => o.id);
+        const orders = await client.searchRead('pos.order', [['company_id', '=', sanJoseId], ['date_order', '>=', `${dateRange.start} 00:00:00`], ['date_order', '<=', `${dateRange.end} 23:59:59`], ['state', 'in', ['paid', 'done', 'invoiced']]], ['id', 'amount_total', 'config_id', 'session_id', 'lines', 'payment_ids', 'date_order']) || [];
+        setRawOrders(orders);
         
+        const orderIds = orders.map(o => o.id);
         let allLines: any[] = [];
         let allPayments: any[] = [];
         if (orderIds.length > 0) {
-          allLines = await client.searchRead('pos.order.line', [['order_id', 'in', orderIds]], ['order_id', 'product_id', 'qty', 'price_subtotal_incl']) || [];
+          allLines = await client.searchRead('pos.order.line', [['order_id', 'in', orderIds]], ['order_id', 'product_id', 'qty', 'price_subtotal_incl', 'price_unit', 'full_product_name']) || [];
           allPayments = await client.searchRead('pos.payment', [['pos_order_id', 'in', orderIds]], ['pos_order_id', 'payment_method_id', 'amount']) || [];
         }
+        setRawLines(allLines);
+        setRawPayments(allPayments);
 
         const stats: any = {};
         filteredConfigs.forEach(conf => {
@@ -193,7 +190,6 @@ const App: React.FC = () => {
       if (!uid) throw new Error("Credenciales maestros inválidas.");
       const user = await client.searchRead('res.users', [['login', '=', loginInput.trim()]], ['name', 'login'], { limit: 1 });
       if (!user || !user.length) throw new Error("ID de Usuario no encontrado.");
-      
       const sessionData = { name: user[0].name, login: user[0].login };
       localStorage.setItem('sjs_ops_session', JSON.stringify(sessionData));
       setSession(sessionData);
@@ -239,7 +235,6 @@ const App: React.FC = () => {
         <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: 'radial-gradient(#714B67 1px, transparent 0)', backgroundSize: '40px 40px' }}></div>
         <div className="absolute top-[-20%] left-[-10%] w-[600px] h-[600px] bg-odoo-primary/5 rounded-full blur-[120px]"></div>
         <div className="absolute bottom-[-20%] right-[-10%] w-[500px] h-[500px] bg-sky-500/5 rounded-full blur-[100px]"></div>
-
         <div className="w-full max-w-[420px] z-10 animate-fade space-y-8">
           <div className="text-center space-y-4">
             <div className="inline-flex p-4 bg-white rounded-[32px] shadow-[0_20px_50px_-12px_rgba(113,75,103,0.15)] mb-4 animate-bounce-slow border border-odoo-primary/5">
@@ -252,44 +247,23 @@ const App: React.FC = () => {
                <div className="h-px w-8 bg-slate-200"></div>
             </div>
           </div>
-
           <div className="bg-white/80 backdrop-blur-xl p-10 rounded-[40px] border border-white shadow-[0_30px_60px_-15px_rgba(0,0,0,0.05)] space-y-8 relative overflow-hidden">
             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-odoo-primary/20 to-transparent"></div>
-            
             <form onSubmit={handleLogin} className="space-y-6">
               <div className="space-y-2">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Autenticación Odoo</label>
                 <div className="relative group">
                   <UserIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-odoo-primary transition-colors" size={18}/>
-                  <input 
-                    type="text" 
-                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl pl-12 pr-4 py-4 text-slate-700 text-sm outline-none focus:bg-white focus:border-odoo-primary/30 focus:ring-4 focus:ring-odoo-primary/5 transition-all placeholder:text-slate-300 font-medium" 
-                    placeholder="ej: admin1@sanjose.pe" 
-                    value={loginInput} 
-                    onChange={e => setLoginInput(e.target.value)} 
-                    required 
-                  />
+                  <input type="text" className="w-full bg-slate-50 border border-slate-100 rounded-2xl pl-12 pr-4 py-4 text-slate-700 text-sm outline-none focus:bg-white focus:border-odoo-primary/30 focus:ring-4 focus:ring-odoo-primary/5 transition-all placeholder:text-slate-300 font-medium" placeholder="ej: admin1@sanjose.pe" value={loginInput} onChange={e => setLoginInput(e.target.value)} required />
                 </div>
               </div>
-              
               <button disabled={loading} className="w-full bg-odoo-primary hover:bg-[#5e3e55] text-white py-4 rounded-2xl font-black uppercase tracking-widest text-xs shadow-xl shadow-odoo-primary/10 transition-all hover:-translate-y-1 active:scale-[0.98] flex items-center justify-center gap-3">
                 {loading ? <Loader2 className="animate-spin" size={20}/> : <>Acceder al Sistema <ChevronRight size={18}/></>}
               </button>
             </form>
-
-            {errorLog && (
-              <div className="flex items-center gap-3 p-4 bg-red-50 border border-red-100 rounded-2xl text-red-500 text-[10px] font-bold uppercase tracking-wide text-center">
-                <AlertTriangle size={16} className="shrink-0"/> {errorLog}
-              </div>
-            )}
+            {errorLog && <div className="flex items-center gap-3 p-4 bg-red-50 border border-red-100 rounded-2xl text-red-500 text-[10px] font-bold uppercase tracking-wide text-center"><AlertTriangle size={16} className="shrink-0"/> {errorLog}</div>}
           </div>
-
-          <div className="text-center pt-4">
-             <a href="https://gaorsystem.vercel.app/" target="_blank" rel="noopener noreferrer" className="inline-flex flex-col items-center gap-1 group">
-               <span className="text-[9px] font-black text-slate-300 uppercase tracking-[0.3em] group-hover:text-odoo-primary transition-colors">Powered by</span>
-               <span className="text-xs font-black text-slate-400 group-hover:text-slate-600 transition-colors uppercase italic">garosystemperu 2026</span>
-             </a>
-          </div>
+          <div className="text-center pt-4"><a href="https://gaorsystem.vercel.app/" target="_blank" rel="noopener noreferrer" className="inline-flex flex-col items-center gap-1 group"><span className="text-[9px] font-black text-slate-300 uppercase tracking-[0.3em] group-hover:text-odoo-primary transition-colors">Powered by</span><span className="text-xs font-black text-slate-400 group-hover:text-slate-600 transition-colors uppercase italic">garosystemperu 2026</span></a></div>
         </div>
       </div>
     );
@@ -305,17 +279,12 @@ const App: React.FC = () => {
             <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">CENTRO DE OPERACIONES</span>
           </div>
           <div className="h-4 w-px bg-slate-200 mx-4"></div>
-          <div className={`px-2.5 py-1 rounded-full text-[8px] font-black uppercase tracking-widest ${isAdmin ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
-            {isAdmin ? 'Privilegios Admin' : 'Acceso Estándar'}
-          </div>
+          <div className={`px-2.5 py-1 rounded-full text-[8px] font-black uppercase tracking-widest ${isAdmin ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>{isAdmin ? 'Privilegios Admin' : 'Acceso Estándar'}</div>
         </div>
         <div className="flex items-center gap-3 h-full">
            <div className="text-right mr-2 hidden sm:block">
               <p className="text-[10px] font-black uppercase text-slate-700 leading-none">{session?.name}</p>
-              <div className="flex items-center justify-end gap-1 mt-1">
-                <div className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse"></div>
-                <p className="text-[8px] font-black text-slate-400 uppercase tracking-tighter">Activo Ahora</p>
-              </div>
+              <div className="flex items-center justify-end gap-1 mt-1"><div className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse"></div><p className="text-[8px] font-black text-slate-400 uppercase tracking-tighter">Activo Ahora</p></div>
            </div>
            <button onClick={handleLogout} className="w-10 h-10 flex items-center justify-center bg-slate-50 text-slate-400 hover:bg-red-50 hover:text-red-500 rounded-xl transition-all border border-slate-100"><LogOut size={18}/></button>
         </div>
@@ -330,94 +299,58 @@ const App: React.FC = () => {
                  <button onClick={() => setActiveTab('dashboard')} className={`o-sidebar-item w-full text-left ${activeTab === 'dashboard' ? 'active' : ''}`}><LayoutDashboard size={18} /> Resumen Ejecutivo</button>
                  <button onClick={() => setActiveTab('sesiones')} className={`o-sidebar-item w-full text-left ${activeTab === 'sesiones' ? 'active' : ''}`}><Clock size={18} /> Control Sesiones</button>
                  <button onClick={() => setActiveTab('ventas')} className={`o-sidebar-item w-full text-left ${activeTab === 'ventas' ? 'active' : ''}`}><TrendingUp size={18} /> Auditoría Puntos</button>
-                 
                  <div className="px-4 mt-8 mb-4"><h3 className="text-[9px] font-black text-slate-300 uppercase tracking-[0.3em]">Gestión RRHH</h3></div>
                  <button onClick={() => setActiveTab('personal')} className={`o-sidebar-item w-full text-left ${activeTab === 'personal' ? 'active' : ''}`}><Users size={18} /> Personal y Horarios</button>
-
                  <div className="px-4 mt-8 mb-4"><h3 className="text-[9px] font-black text-slate-300 uppercase tracking-[0.3em]">Parámetros</h3></div>
                  <div className="px-4 space-y-4">
                     <div className="space-y-2">
-                      <div className="relative">
-                        <Calendar size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                        <input type="date" value={dateRange.start} onChange={e => setDateRange({...dateRange, start: e.target.value})} className="w-full bg-slate-50 border border-slate-100 rounded-xl pl-9 pr-3 py-2 text-[11px] font-bold text-slate-600 outline-none focus:border-odoo-primary/30"/>
-                      </div>
-                      <div className="relative">
-                        <Calendar size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                        <input type="date" value={dateRange.end} onChange={e => setDateRange({...dateRange, end: e.target.value})} className="w-full bg-slate-50 border border-slate-100 rounded-xl pl-9 pr-3 py-2 text-[11px] font-bold text-slate-600 outline-none focus:border-odoo-primary/30"/>
-                      </div>
+                      <div className="relative"><Calendar size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input type="date" value={dateRange.start} onChange={e => setDateRange({...dateRange, start: e.target.value})} className="w-full bg-slate-50 border border-slate-100 rounded-xl pl-9 pr-3 py-2 text-[11px] font-bold text-slate-600 outline-none focus:border-odoo-primary/30"/></div>
+                      <div className="relative"><Calendar size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input type="date" value={dateRange.end} onChange={e => setDateRange({...dateRange, end: e.target.value})} className="w-full bg-slate-50 border border-slate-100 rounded-xl pl-9 pr-3 py-2 text-[11px] font-bold text-slate-600 outline-none focus:border-odoo-primary/30"/></div>
                     </div>
-                    <button onClick={fetchData} className="w-full bg-slate-900 text-white text-[10px] font-black gap-2 py-3 rounded-xl uppercase tracking-[0.1em] hover:bg-black transition-all shadow-lg shadow-slate-200 flex items-center justify-center">
-                       <RefreshCw size={14} className={loading ? 'animate-spin' : ''}/> Sincronizar Odoo
-                    </button>
+                    <button onClick={fetchData} className="w-full bg-slate-900 text-white text-[10px] font-black gap-2 py-3 rounded-xl uppercase tracking-[0.1em] hover:bg-black transition-all shadow-lg shadow-slate-200 flex items-center justify-center"><RefreshCw size={14} className={loading ? 'animate-spin' : ''}/> Sincronizar Odoo</button>
                  </div>
                </>
              )}
-
              <div className="px-4 mt-8 mb-4"><h3 className="text-[9px] font-black text-slate-300 uppercase tracking-[0.3em]">Operativo</h3></div>
              <button onClick={() => setActiveTab('pedidos')} className={`o-sidebar-item w-full text-left ${activeTab === 'pedidos' ? 'active' : ''}`}><Truck size={18} /> Logística Interna</button>
              {!isAdmin && <button onClick={() => setActiveTab('personal')} className={`o-sidebar-item w-full text-left ${activeTab === 'personal' ? 'active' : ''}`}><Clock size={18} /> Mis Horarios</button>}
           </div>
-          <div className="px-8 py-6 border-t border-slate-50">
-             <div className="flex flex-col items-center gap-1 opacity-40 grayscale hover:grayscale-0 transition-all">
-                <p className="text-[8px] font-black text-slate-400 uppercase tracking-[0.2em]">Build 2026.4</p>
-                <p className="text-[9px] font-black text-slate-500 uppercase tracking-tighter italic">Garo System</p>
-             </div>
-          </div>
+          <div className="px-8 py-6 border-t border-slate-50"><div className="flex flex-col items-center gap-1 opacity-40 grayscale hover:grayscale-0 transition-all"><p className="text-[8px] font-black text-slate-400 uppercase tracking-[0.2em]">Build 2026.4</p><p className="text-[9px] font-black text-slate-500 uppercase tracking-tighter italic">Garo System</p></div></div>
         </aside>
 
         <main className="flex-1 p-4 md:p-10 bg-slate-50 pb-24 md:pb-10">
           {activeTab === 'dashboard' && isAdmin && <Dashboard posConfigs={posConfigs} posSalesData={posSalesData} lastSync={lastSync} />}
           {activeTab === 'sesiones' && isAdmin && <SessionModule activeSessions={activeSessions} loading={loading} />}
-          {activeTab === 'ventas' && isAdmin && <AuditModule posConfigs={posConfigs} posSalesData={posSalesData} onSelect={(pos) => setPosSalesData((prev:any) => ({...prev, _selected: pos}))} selectedPos={posSalesData._selected} onCloseDetail={() => setPosSalesData((prev:any) => ({...prev, _selected: null}))} />}
-          {activeTab === 'personal' && <StaffManagement isAdmin={isAdmin} employees={employees} posConfigs={posConfigs} currentUserEmail={session?.login} loading={loading} />}
-          {activeTab === 'pedidos' && (
-            <OrderModule 
-              productSearch={productSearch} 
-              setProductSearch={setProductSearch} 
-              onSearch={handleProductSearch} 
-              products={products} 
-              cart={cart} 
-              setCart={setCart} 
-              warehouses={warehouses.filter(w => w.id !== originWarehouseId)} 
-              targetWarehouseId={targetWarehouseId} 
-              setTargetWarehouseId={setTargetWarehouseId} 
-              onSubmitOrder={handleSubmitOrder} 
-              loading={loading} 
+          {activeTab === 'ventas' && isAdmin && (
+            <AuditModule 
+              posConfigs={posConfigs} 
+              posSalesData={posSalesData} 
+              rawOrders={rawOrders}
+              rawLines={rawLines}
+              rawPayments={rawPayments}
+              onSelect={(pos) => setPosSalesData((prev:any) => ({...prev, _selected: pos}))} 
+              selectedPos={posSalesData._selected} 
+              onCloseDetail={() => setPosSalesData((prev:any) => ({...prev, _selected: null}))} 
             />
           )}
+          {activeTab === 'personal' && <StaffManagement isAdmin={isAdmin} employees={employees} posConfigs={posConfigs} currentUserEmail={session?.login} loading={loading} />}
+          {activeTab === 'pedidos' && <OrderModule productSearch={productSearch} setProductSearch={setProductSearch} onSearch={handleProductSearch} products={products} cart={cart} setCart={setCart} warehouses={warehouses.filter(w => w.id !== originWarehouseId)} targetWarehouseId={targetWarehouseId} setTargetWarehouseId={setTargetWarehouseId} onSubmitOrder={handleSubmitOrder} loading={loading} />}
         </main>
       </div>
 
       <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-white/90 backdrop-blur-xl border-t border-slate-200 flex items-center justify-around z-[200] px-4 shadow-[0_-10px_30px_rgba(0,0,0,0.03)] rounded-t-[24px]">
            {isAdmin ? (
              <>
-               <button onClick={() => { setActiveTab('dashboard'); window.scrollTo(0, 0); }} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'dashboard' ? 'text-odoo-primary scale-110' : 'text-slate-300'}`}>
-                 <LayoutDashboard size={22} strokeWidth={activeTab === 'dashboard' ? 3 : 2}/><span className="text-[8px] font-black uppercase tracking-widest">BI</span>
-               </button>
-               <button onClick={() => { setActiveTab('personal'); window.scrollTo(0, 0); }} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'personal' ? 'text-odoo-primary scale-110' : 'text-slate-300'}`}>
-                 <Users size={22} strokeWidth={activeTab === 'personal' ? 3 : 2}/><span className="text-[8px] font-black uppercase tracking-widest">Team</span>
-               </button>
-               <button onClick={() => { setActiveTab('ventas'); window.scrollTo(0, 0); }} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'ventas' ? 'text-odoo-primary scale-110' : 'text-slate-300'}`}>
-                 <TrendingUp size={22} strokeWidth={activeTab === 'ventas' ? 3 : 2}/><span className="text-[8px] font-black uppercase tracking-widest">Audit</span>
-               </button>
+               <button onClick={() => { setActiveTab('dashboard'); window.scrollTo(0, 0); }} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'dashboard' ? 'text-odoo-primary scale-110' : 'text-slate-300'}`}><LayoutDashboard size={22} strokeWidth={activeTab === 'dashboard' ? 3 : 2}/><span className="text-[8px] font-black uppercase tracking-widest">BI</span></button>
+               <button onClick={() => { setActiveTab('personal'); window.scrollTo(0, 0); }} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'personal' ? 'text-odoo-primary scale-110' : 'text-slate-300'}`}><Users size={22} strokeWidth={activeTab === 'personal' ? 3 : 2}/><span className="text-[8px] font-black uppercase tracking-widest">Team</span></button>
+               <button onClick={() => { setActiveTab('ventas'); window.scrollTo(0, 0); }} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'ventas' ? 'text-odoo-primary scale-110' : 'text-slate-300'}`}><TrendingUp size={22} strokeWidth={activeTab === 'ventas' ? 3 : 2}/><span className="text-[8px] font-black uppercase tracking-widest">Audit</span></button>
              </>
            ) : null}
-           <button onClick={() => { setActiveTab('pedidos'); window.scrollTo(0, 0); }} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'pedidos' ? 'text-odoo-primary scale-110' : 'text-slate-300'}`}>
-             <Truck size={22} strokeWidth={activeTab === 'pedidos' ? 3 : 2}/><span className="text-[8px] font-black uppercase tracking-widest">Envios</span>
-           </button>
-           {!isAdmin && (
-             <button onClick={() => { setActiveTab('personal'); window.scrollTo(0, 0); }} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'personal' ? 'text-odoo-primary scale-110' : 'text-slate-300'}`}>
-               <Clock size={22} strokeWidth={activeTab === 'personal' ? 3 : 2}/><span className="text-[8px] font-black uppercase tracking-widest">Mis Horas</span>
-             </button>
-           )}
+           <button onClick={() => { setActiveTab('pedidos'); window.scrollTo(0, 0); }} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'pedidos' ? 'text-odoo-primary scale-110' : 'text-slate-300'}`}><Truck size={22} strokeWidth={activeTab === 'pedidos' ? 3 : 2}/><span className="text-[8px] font-black uppercase tracking-widest">Envios</span></button>
+           {!isAdmin && <button onClick={() => { setActiveTab('personal'); window.scrollTo(0, 0); }} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'personal' ? 'text-odoo-primary scale-110' : 'text-slate-300'}`}><Clock size={22} strokeWidth={activeTab === 'personal' ? 3 : 2}/><span className="text-[8px] font-black uppercase tracking-widest">Mis Horas</span></button>}
       </nav>
 
-      {loading && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[300] bg-white border border-slate-200 px-6 py-3 rounded-full shadow-2xl flex items-center gap-4 animate-in slide-in-from-top duration-300">
-          <Loader2 size={18} className="text-odoo-primary animate-spin" />
-          <p className="text-[10px] font-black text-slate-700 uppercase tracking-[0.2em]">Odoo en Tiempo Real...</p>
-        </div>
-      )}
+      {loading && <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[300] bg-white border border-slate-200 px-6 py-3 rounded-full shadow-2xl flex items-center gap-4 animate-in slide-in-from-top duration-300"><Loader2 size={18} className="text-odoo-primary animate-spin" /><p className="text-[10px] font-black text-slate-700 uppercase tracking-[0.2em]">Odoo en Tiempo Real...</p></div>}
     </div>
   );
 };

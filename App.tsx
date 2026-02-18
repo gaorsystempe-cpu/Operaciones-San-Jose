@@ -80,6 +80,9 @@ const App: React.FC = () => {
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [originWarehouseId, setOriginWarehouseId] = useState<number | null>(null);
   const [originLocationId, setOriginLocationId] = useState<number | null>(null);
+  const [internalPickingTypeId, setInternalPickingTypeId] = useState<number | null>(null);
+  const [currentCompanyId, setCurrentCompanyId] = useState<number | null>(null);
+  
   const [products, setProducts] = useState<Product[]>([]);
   const [productSearch, setProductSearch] = useState("");
   const [cart, setCart] = useState<any[]>([]);
@@ -100,6 +103,7 @@ const App: React.FC = () => {
       const companies = await client.searchRead('res.company', [['name', 'ilike', 'SAN JOSE']], ['id']);
       if (!companies || !companies.length) throw new Error("Compañía no encontrada.");
       const sanJoseId = companies[0].id;
+      setCurrentCompanyId(sanJoseId);
 
       const ws = await client.searchRead('stock.warehouse', [['company_id', '=', sanJoseId]], ['name', 'id', 'code', 'lot_stock_id']);
       setWarehouses(ws || []);
@@ -107,9 +111,21 @@ const App: React.FC = () => {
       const principal = (ws || []).find((w: any) => 
         w.code === 'PR' || w.code === 'PRINCIPAL1' || w.name.toUpperCase().includes('PRINCIPAL')
       );
+      
       if (principal) {
         setOriginWarehouseId(principal.id);
         if (principal.lot_stock_id) setOriginLocationId(principal.lot_stock_id[0]);
+
+        // BUSQUEDA DINAMICA DEL TIPO DE OPERACION
+        // Buscamos el ID de "Transferencias Internas" para el almacén principal
+        const pickingTypes = await client.searchRead('stock.picking.type', [
+          ['warehouse_id', '=', principal.id],
+          ['code', '=', 'internal']
+        ], ['id', 'name']);
+        
+        if (pickingTypes && pickingTypes.length > 0) {
+          setInternalPickingTypeId(pickingTypes[0].id);
+        }
       }
 
       const empData = await client.searchRead('hr.employee', [['active', '=', true]], ['id', 'name', 'job_title', 'work_email', 'work_phone', 'department_id', 'image_128']) || [];
@@ -213,20 +229,43 @@ const App: React.FC = () => {
   };
 
   const handleSubmitOrder = async () => {
-    if (!targetWarehouseId || cart.length === 0) return;
+    if (!targetWarehouseId || cart.length === 0 || !internalPickingTypeId || !currentCompanyId) {
+      alert("Error: Faltan parámetros de configuración de Odoo (Picking Type o Company).");
+      return;
+    }
     setLoading(true);
     try {
       const targetWarehouse = warehouses.find(w => w.id === targetWarehouseId);
-      if (!targetWarehouse) throw new Error("Destino no válido.");
+      if (!targetWarehouse) throw new Error("Botica destino no válida.");
+      
+      // CREACION DEL PICKING (ALBARAN)
       const pickingId = await client.create('stock.picking', {
-        picking_type_id: 5,
+        picking_type_id: internalPickingTypeId,
         location_id: originLocationId,
         location_dest_id: targetWarehouse.lot_stock_id?.[0],
-        origin: `App Ops - ${session?.name}`,
-        move_ids_without_package: cart.map(item => [0, 0, { name: item.name, product_id: item.id, product_uom_qty: item.qty, product_uom: 1, location_id: originLocationId, location_dest_id: targetWarehouse.lot_stock_id?.[0] }])
+        company_id: currentCompanyId,
+        origin: `SOLICITUD APP OPS - SOLICITADO POR: ${session?.name || 'Usuario SJ'}`,
+        move_ids_without_package: cart.map(item => [0, 0, { 
+          name: item.name, 
+          product_id: item.id, 
+          product_uom_qty: item.qty, 
+          product_uom: 1, 
+          location_id: originLocationId, 
+          location_dest_id: targetWarehouse.lot_stock_id?.[0],
+          company_id: currentCompanyId
+        }])
       });
-      if (pickingId) { alert(`Pedido #${pickingId} enviado.`); setCart([]); setTargetWarehouseId(null); }
-    } catch (e: any) { alert(e.message); } finally { setLoading(false); }
+      
+      if (pickingId) { 
+        alert(`¡ÉXITO! Se ha generado la Solicitud #${pickingId} en el almacén PRINCIPAL1. El personal de logística ya puede verla como Borrador.`); 
+        setCart([]); 
+        setTargetWarehouseId(null); 
+      }
+    } catch (e: any) { 
+      alert(`Error al generar pedido en Odoo: ${e.message}`); 
+    } finally { 
+      setLoading(false); 
+    }
   };
 
   if (view === 'login') {

@@ -4,7 +4,7 @@ import { reportService } from '../services/supabaseService';
 import { 
   Calendar, Store, CheckCircle2, Clock, Wallet, ShoppingBag, 
   Loader2, RefreshCw, Send, Info, Copy, Check, Terminal, Zap,
-  Smartphone, CreditCard, Banknote, Settings2, BellRing
+  Smartphone, CreditCard, Banknote, Settings2, BellRing, AlertCircle, ArrowRight
 } from 'lucide-react';
 
 export const ReportesModule: React.FC = () => {
@@ -53,23 +53,11 @@ export const ReportesModule: React.FC = () => {
       pos_nombre: "BOTICA SJ - TEST",
       total_monto: 1250.50,
       conteo_tickets: 45,
-      fecha: new Date().toISOString().split('T')[0],
-      pagos: {
-        "Efectivo": 450.00,
-        "Yape": 600.50,
-        "Visa": 200.00
-      }
+      fecha: new Date().toISOString().split('T')[0]
     };
     navigator.clipboard.writeText(JSON.stringify(testJson, null, 2));
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-  };
-
-  const getPaymentIcon = (method: string) => {
-    const m = method.toLowerCase();
-    if (m.includes('yape') || m.includes('plin')) return <Smartphone size={12} className="text-purple-500" />;
-    if (m.includes('efectivo')) return <Banknote size={12} className="text-emerald-500" />;
-    return <CreditCard size={12} className="text-blue-500" />;
   };
 
   const formatHour = (h: string) => {
@@ -114,6 +102,60 @@ export const ReportesModule: React.FC = () => {
         </div>
       </div>
 
+      {/* Troubleshooting Panel */}
+      {showGuide && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade">
+          <div className="lg:col-span-2 bg-slate-900 rounded-[32px] p-10 border border-slate-700 shadow-2xl relative overflow-hidden">
+             <div className="relative z-10">
+                <h3 className="text-sm font-black text-emerald-400 uppercase tracking-widest mb-8 flex items-center gap-3">
+                  <Terminal size={20} /> Cambios Críticos Requeridos en n8n
+                </h3>
+                <div className="space-y-6">
+                   <div className="bg-slate-800 rounded-2xl p-6 border-l-4 border-l-amber-500">
+                      <p className="text-[10px] font-black text-white uppercase mb-2">1. Nodo "Get Odoo Sales1" (Filtro Fecha)</p>
+                      <p className="text-xs text-slate-400 mb-4">Cambia la fórmula en el campo 'args' para ignorar el desfase UTC:</p>
+                      <code className="bg-black/40 p-3 rounded-xl text-emerald-400 text-[10px] font-mono block">
+                        {"{{ $now.minus({ hours: 5 }).format('yyyy-MM-dd') }}"}
+                      </code>
+                   </div>
+                   <div className="bg-slate-800 rounded-2xl p-6 border-l-4 border-l-amber-500">
+                      <p className="text-[10px] font-black text-white uppercase mb-2">2. Nodos "WhatsApp" (Endpoint)</p>
+                      <p className="text-xs text-slate-400 mb-2">Cambia la URL para enviar texto plano:</p>
+                      <div className="flex items-center gap-3">
+                         <span className="text-[9px] bg-red-500/20 text-red-400 px-2 py-1 rounded">/sendMedia</span>
+                         <ArrowRight size={14} className="text-slate-600" />
+                         <span className="text-[9px] bg-emerald-500/20 text-emerald-400 px-2 py-1 rounded font-bold">/sendText</span>
+                      </div>
+                   </div>
+                   <div className="bg-slate-800 rounded-2xl p-6 border-l-4 border-l-amber-500">
+                      <p className="text-[10px] font-black text-white uppercase mb-2">3. Nodo "Supabase Upsert" (Header)</p>
+                      <p className="text-xs text-slate-400 mb-2">Añade este Header para permitir actualizaciones:</p>
+                      <div className="grid grid-cols-2 gap-4">
+                         <div className="bg-black/20 p-2 rounded-lg text-[10px] font-mono text-slate-300">Name: Prefer</div>
+                         <div className="bg-black/20 p-2 rounded-lg text-[10px] font-mono text-slate-300">Value: resolution=merge-duplicates</div>
+                      </div>
+                   </div>
+                </div>
+             </div>
+          </div>
+          <div className="bg-white border border-slate-200 rounded-[32px] p-8 flex flex-col items-center justify-center text-center">
+             <div className="p-4 bg-emerald-100 text-emerald-600 rounded-full mb-6">
+                <Zap size={32}/>
+             </div>
+             <h4 className="text-xs font-black text-slate-800 uppercase tracking-widest mb-4">Prueba de Integración</h4>
+             <p className="text-[10px] text-slate-400 font-bold uppercase mb-8 leading-relaxed px-4">
+               Copia este JSON y pégalo en el nodo "Code" o como input en n8n para probar el envío sin esperar a las 11 PM.
+             </p>
+             <button 
+              onClick={copyTestJson} 
+              className="w-full bg-slate-900 text-white py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-3 hover:bg-black transition-all"
+             >
+               {copied ? <Check size={16}/> : <Copy size={16}/>} {copied ? 'Copiado' : 'Copiar JSON Prueba'}
+             </button>
+          </div>
+        </div>
+      )}
+
       {/* Selector de Horario Dynamico */}
       {showConfig && (
         <div className="bg-white border-4 border-odoo-primary/20 rounded-[40px] p-10 animate-fade shadow-2xl relative overflow-hidden">
@@ -125,7 +167,7 @@ export const ReportesModule: React.FC = () => {
                <Clock size={20} className="text-odoo-primary"/> Programación de Sincronización
              </h3>
              <p className="text-xs text-slate-400 font-bold uppercase mb-8 leading-relaxed">
-               Define a qué hora n8n debe extraer los cierres de Odoo y enviarlos a WhatsApp. El sistema guardará este valor en la nube.
+               Define a qué hora n8n debe extraer los cierres de Odoo y enviarlos a WhatsApp.
              </p>
              <div className="flex flex-wrap gap-3">
                 {Array.from({ length: 24 }).map((_, h) => (
@@ -145,56 +187,6 @@ export const ReportesModule: React.FC = () => {
                  <span className="text-[10px] font-black uppercase">Actualizando n8n...</span>
                </div>
              )}
-          </div>
-        </div>
-      )}
-
-      {showGuide && (
-        <div className="bg-slate-900 rounded-[32px] p-8 animate-fade border border-slate-700 shadow-2xl overflow-hidden relative">
-          <div className="absolute top-0 right-0 p-8 opacity-5">
-            <Zap size={200} className="text-white" />
-          </div>
-          <div className="relative z-10">
-            <h3 className="text-sm font-black text-white uppercase tracking-widest mb-6 flex items-center gap-3">
-              <Terminal size={20} className="text-emerald-400"/> Generador de Cargas de Prueba
-            </h3>
-            <p className="text-slate-400 text-xs font-medium mb-8 max-w-2xl">
-              Copia este JSON para probar el Webhook de n8n.
-            </p>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              <div className="bg-slate-800 rounded-2xl p-6 border border-slate-700 relative group">
-                <button 
-                  onClick={copyTestJson}
-                  className="absolute top-4 right-4 p-2 bg-slate-700 hover:bg-emerald-500 text-white rounded-lg transition-all"
-                >
-                  {copied ? <Check size={16}/> : <Copy size={16}/>}
-                </button>
-                <code className="text-[10px] text-emerald-400 font-mono leading-relaxed block whitespace-pre">
-                  {`{
-  "pos_id": 101,
-  "pos_nombre": "BOTICA SJ - TEST",
-  "total_monto": 1250.50,
-  "conteo_tickets": 45,
-  "fecha": "${new Date().toISOString().split('T')[0]}",
-  "pagos": {
-    "Efectivo": 450.00,
-    "Yape": 600.50,
-    "Visa": 200.00
-  }
-}`}
-                </code>
-              </div>
-              <div className="space-y-4">
-                 <div className="bg-slate-800/50 p-5 rounded-2xl border border-slate-700">
-                    <p className="text-[10px] font-black text-emerald-400 uppercase mb-2">Paso 1: Cron en n8n</p>
-                    <p className="text-[11px] text-slate-300">Configura el Cron para ejecutarse cada 1 hora (0 * * * *).</p>
-                 </div>
-                 <div className="bg-slate-800/50 p-5 rounded-2xl border border-slate-700">
-                    <p className="text-[10px] font-black text-sky-400 uppercase mb-2">Paso 2: Validar Hora</p>
-                    <p className="text-[11px] text-slate-300">Lee la tabla 'app_settings'. Si 'value' == Hora Actual, sigue.</p>
-                 </div>
-              </div>
-            </div>
           </div>
         </div>
       )}
@@ -253,27 +245,6 @@ export const ReportesModule: React.FC = () => {
                     <p className="text-lg font-black text-slate-800 tracking-tighter">{rpt.conteo_tickets} <span className="text-[10px] opacity-40">DOCS</span></p>
                  </div>
               </div>
-
-              {rpt.pagos && (
-                <div className="pt-2">
-                   <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
-                     <Wallet size={14} className="text-odoo-primary"/> Mix de Pagos
-                   </p>
-                   <div className="flex flex-wrap gap-2">
-                      {Object.entries(rpt.pagos).map(([method, amount]: any, idx) => (
-                        <div key={idx} className="bg-white border border-slate-100 pl-2.5 pr-4 py-2 rounded-2xl text-[10px] font-bold text-slate-600 flex items-center gap-2 shadow-sm hover:border-odoo-primary/20 transition-all">
-                          <div className="w-5 h-5 bg-slate-50 rounded-lg flex items-center justify-center">
-                            {getPaymentIcon(method)}
-                          </div>
-                          <div className="flex flex-col">
-                            <span className="text-[8px] text-slate-300 uppercase leading-none mb-0.5">{method}</span>
-                            <span>S/ {amount.toFixed(2)}</span>
-                          </div>
-                        </div>
-                      ))}
-                   </div>
-                </div>
-              )}
             </div>
 
             {/* Footer */}

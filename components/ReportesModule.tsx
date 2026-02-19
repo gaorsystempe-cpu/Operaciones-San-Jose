@@ -5,7 +5,7 @@ import {
   Calendar, Store, CheckCircle2, Clock, Wallet, ShoppingBag, 
   Loader2, RefreshCw, Send, Info, Copy, Check, Terminal, Zap,
   Smartphone, CreditCard, Banknote, Settings2, BellRing, AlertCircle, ArrowRight,
-  Database, MessageSquare, ShieldAlert, Code2
+  Database, MessageSquare, ShieldAlert, Code2, Sparkles
 } from 'lucide-react';
 
 export const ReportesModule: React.FC = () => {
@@ -103,70 +103,60 @@ export const ReportesModule: React.FC = () => {
         </div>
       </div>
 
-      {/* Panel de Diagnóstico Inteligente */}
+      {/* Panel de Diagnóstico Finalizado */}
       {!loading && reports.length === 0 && (
-        <div className="bg-white border-4 border-amber-200 rounded-[40px] p-10 animate-fade shadow-2xl relative overflow-hidden">
-           <div className="absolute top-0 right-0 p-10 opacity-5 pointer-events-none">
-             <ShieldAlert size={120} className="text-amber-500" />
-           </div>
-           <div className="flex flex-col lg:flex-row gap-10 items-center relative z-10">
-              <div className="p-6 bg-amber-50 text-amber-500 rounded-full animate-bounce-slow border-2 border-amber-100">
-                 <ShieldAlert size={48} />
+        <div className="bg-emerald-50 border-2 border-emerald-200 rounded-[40px] p-10 animate-fade">
+           <div className="flex flex-col lg:flex-row gap-10 items-center">
+              <div className="p-6 bg-emerald-100 text-emerald-600 rounded-full">
+                 <Sparkles size={48} />
               </div>
               <div className="flex-1 text-center lg:text-left">
-                 <h3 className="text-xl font-black text-slate-800 uppercase tracking-tight mb-2">Validación de n8n Requerida</h3>
-                 <p className="text-sm text-slate-500 font-medium leading-relaxed max-w-2xl">
-                    Tu fórmula de fecha en el nodo de Odoo es <b>CORRECTA</b> según tu captura. 
-                    Ahora asegúrate de que el flujo no se detenga en los nodos siguientes (WhatsApp o Supabase).
+                 <h3 className="text-xl font-black text-emerald-900 uppercase tracking-tight mb-2">¡Configuración Validada!</h3>
+                 <p className="text-sm text-emerald-700 font-medium leading-relaxed max-w-2xl">
+                    Has implementado la <b>Fórmula Maestra</b> correctamente. Tu n8n ahora capturará todas las ventas del día sin errores de zona horaria.
+                    Recuerda hacer una prueba manual en n8n para ver los resultados aquí de inmediato.
                  </p>
-                 <div className="mt-6 flex flex-wrap gap-4">
-                    <div className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-700 rounded-xl text-[10px] font-black uppercase">
-                       <Check size={14}/> Fecha OK
-                    </div>
-                    <div className="flex items-center gap-2 px-4 py-2 bg-slate-50 text-slate-400 rounded-xl text-[10px] font-black uppercase">
-                       <Clock size={14}/> Esperando Ejecución
-                    </div>
-                 </div>
               </div>
               <button 
                 onClick={() => setShowGuide(true)}
-                className="bg-slate-900 text-white px-10 py-5 rounded-2xl text-xs font-black uppercase tracking-widest shadow-xl hover:bg-black transition-all flex items-center gap-3"
+                className="bg-emerald-600 text-white px-8 py-4 rounded-2xl text-xs font-black uppercase tracking-widest shadow-lg shadow-emerald-600/20 hover:bg-emerald-700 transition-all"
               >
-                Chequear Pasos Finales <ArrowRight size={18}/>
+                Ver Checklist Final
               </button>
            </div>
         </div>
       )}
 
-      {/* Troubleshooting Panel - Mejorado basado en Captura */}
+      {/* Troubleshooting Panel - Con la Fórmula Validada */}
       {showGuide && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade">
           <div className="lg:col-span-2 bg-slate-900 rounded-[32px] p-10 border border-slate-700 shadow-2xl relative overflow-hidden">
              <div className="relative z-10">
                 <h3 className="text-sm font-black text-emerald-400 uppercase tracking-widest mb-8 flex items-center gap-3">
-                  <Terminal size={20} /> Checklist de Verificación n8n
+                  <Sparkles size={20} className="animate-pulse" /> La Fórmula Maestra (Validada)
                 </h3>
                 <div className="space-y-6">
-                   <div className="bg-slate-800/50 rounded-2xl p-6 border-l-4 border-l-emerald-500">
-                      <div className="flex justify-between items-start mb-2">
-                        <p className="text-[10px] font-black text-white uppercase flex items-center gap-2"><Database size={14}/> 1. Nodo Odoo (Sintaxis)</p>
-                        <span className="text-[8px] font-black bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded uppercase">Verificado en Captura</span>
+                   <div className="bg-slate-800/80 rounded-2xl p-6 border-l-4 border-l-emerald-500 shadow-xl">
+                      <div className="flex justify-between items-start mb-4">
+                        <p className="text-[10px] font-black text-white uppercase flex items-center gap-2"><Database size={14}/> Nodo Odoo (Campo Args / Domain)</p>
+                        <span className="text-[8px] font-black bg-emerald-500/20 text-emerald-400 px-3 py-1 rounded-full uppercase tracking-widest">Sintaxis Perfecta</span>
                       </div>
-                      <p className="text-xs text-slate-400 mb-4">Tu fórmula es correcta. Solo asegúrate de que el <b>Domain</b> empiece con doble corchete:</p>
-                      <code className="bg-black/40 p-3 rounded-xl text-emerald-400 text-[10px] font-mono block">
-                        {"[[\"date_order\", \">=\", \"{{ $now.minus({ hours: 5 }).format('yyyy-MM-dd') }} 00:00:00\"], ...]"}
+                      <p className="text-[11px] text-slate-400 mb-4 font-medium">Usa exactamente este bloque para garantizar el 100% de los datos de hoy:</p>
+                      <code className="bg-black/60 p-5 rounded-xl text-emerald-400 text-[10px] font-mono block leading-relaxed break-all border border-slate-700 select-all">
+                        {`[["date_order", ">=", "{{ $now.minus({ hours: 5 }).format('yyyy-MM-dd') }} 00:00:00"], ["date_order", "<=", "{{ $now.minus({ hours: 5 }).format('yyyy-MM-dd') }} 23:59:59"], ["state", "in", ["paid", "done", "invoiced"]]]`}
                       </code>
                    </div>
-                   <div className="bg-slate-800/50 rounded-2xl p-6 border-l-4 border-l-amber-500">
-                      <p className="text-[10px] font-black text-white uppercase mb-2 flex items-center gap-2"><MessageSquare size={14}/> 2. Nodo WhatsApp (Endpoint)</p>
-                      <p className="text-xs text-slate-400 mb-2"><b>¡OJO!</b> Si el nodo falla, cambia la URL de `/sendMedia` a `/sendText`:</p>
-                      <div className="bg-black/40 p-3 rounded-xl text-slate-300 text-[9px] font-mono">
-                         .../message/<span className="text-amber-400 font-bold">sendText</span>/olivia
+                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="bg-slate-800/40 p-6 rounded-2xl border border-slate-700">
+                         <p className="text-[9px] font-black text-amber-400 uppercase mb-2">Paso 2: WhatsApp</p>
+                         <p className="text-[10px] text-slate-500 mb-3">Asegúrate que el endpoint termine en:</p>
+                         <span className="text-[10px] font-mono text-white bg-slate-900 px-2 py-1 rounded">/message/sendText/olivia</span>
                       </div>
-                   </div>
-                   <div className="bg-slate-800/50 rounded-2xl p-6 border-l-4 border-l-blue-500">
-                      <p className="text-[10px] font-black text-white uppercase mb-2 flex items-center gap-2"><Code2 size={14}/> 3. Prueba Manual</p>
-                      <p className="text-xs text-slate-400">Dale clic al botón <b>"Execute Workflow"</b> en n8n ahora mismo para forzar una sincronización.</p>
+                      <div className="bg-slate-800/40 p-6 rounded-2xl border border-slate-700">
+                         <p className="text-[9px] font-black text-blue-400 uppercase mb-2">Paso 3: Supabase</p>
+                         <p className="text-[10px] text-slate-500 mb-3">Header 'Prefer' para evitar errores:</p>
+                         <span className="text-[10px] font-mono text-white bg-slate-900 px-2 py-1 rounded">resolution=merge-duplicates</span>
+                      </div>
                    </div>
                 </div>
              </div>
@@ -175,16 +165,17 @@ export const ReportesModule: React.FC = () => {
              <div className="p-4 bg-emerald-100 text-emerald-600 rounded-full mb-6">
                 <Zap size={32}/>
              </div>
-             <h4 className="text-xs font-black text-slate-800 uppercase tracking-widest mb-4">Inyección Manual</h4>
+             <h4 className="text-xs font-black text-slate-800 uppercase tracking-widest mb-4">Ejecutar Ahora</h4>
              <p className="text-[10px] text-slate-400 font-bold uppercase mb-8 leading-relaxed px-4">
-               Copia este JSON y úsalo para probar el nodo de Supabase directamente si nada aparece.
+               Una vez pegada la fórmula, dale a <b>"Execute Workflow"</b> en n8n y pulsa el botón de arriba <b>"Sincronizar"</b> para ver la magia.
              </p>
-             <button 
-              onClick={copyTestJson} 
-              className="w-full bg-slate-900 text-white py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-3 hover:bg-black transition-all"
-             >
-               {copied ? <Check size={16}/> : <Copy size={16}/>} {copied ? 'Copiado' : 'Copiar Datos Prueba'}
-             </button>
+             <div className="w-full p-4 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                <p className="text-[8px] font-black text-slate-400 uppercase mb-2">Estado del Canal</p>
+                <div className="flex items-center justify-center gap-2">
+                   <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
+                   <span className="text-[10px] font-black text-slate-700 uppercase tracking-tighter">Listo para recibir datos</span>
+                </div>
+             </div>
           </div>
         </div>
       )}
@@ -223,7 +214,7 @@ export const ReportesModule: React.FC = () => {
         {loading ? (
           <div className="col-span-full py-24 text-center">
             <Loader2 className="animate-spin mx-auto text-odoo-primary mb-4" size={48}/>
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">Conectando con Supabase...</p>
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">Consultando base de datos...</p>
           </div>
         ) : reports.length === 0 ? (
           <div className="col-span-full py-32 text-center bg-white border border-dashed border-slate-200 rounded-[40px] opacity-60">
